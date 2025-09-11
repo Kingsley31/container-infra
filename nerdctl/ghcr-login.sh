@@ -68,4 +68,4 @@ read -s -p "Enter GitHub Personal Access Token: " TOKEN
 echo ""
 
 # --- Login with nerdctl ---
-echo "$TOKEN" | nerdctl login ghcr.io -u "$USERNAME" --password-stdin
+echo "$TOKEN" | sudo nerdctl login ghcr.io -u "$USERNAME" --password-stdin
