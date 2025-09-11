@@ -7,23 +7,24 @@ if [[ $EUID -ne 0 ]]; then
 fi
 
 # Usage examples:
-# ./nginx-add-service.sh /opt/nginx myservice 8080
-# ./nginx-add-service.sh /opt/nginx myservice 8080 mydomain.com
-# ./nginx-add-service.sh /opt/nginx myservice 8080 /
+# ./nginx-add-service.sh /opt/nginx myservice 8080 mycontainer_v1
+# ./nginx-add-service.sh /opt/nginx myservice 8080 mycontainer_v1 mydomain.com
+# ./nginx-add-service.sh /opt/nginx myservice 8080 mycontainer_v1 /
 
-if [[ $# -lt 3 ]]; then
-    echo "Usage: $0 <nginx_base_dir> <service_name> <service_port> [domain_name]"
+if [[ $# -lt 4 ]]; then
+    echo "Usage: $0 <nginx_base_dir> <service_name> <service_port> <container_name> [domain_name]"
     echo "Examples:"
-    echo "  $0 /opt/nginx myservice 8080             # default: myservice.example.com"
-    echo "  $0 /opt/nginx myservice 8080 mydomain.com  # custom domain"
-    echo "  $0 /opt/nginx myservice 8080 /          # uses example.com and www.example.com"
+    echo "  $0 /opt/nginx myservice 8080 mycontainer_v1             # default: myservice.example.com"
+    echo "  $0 /opt/nginx myservice 8080 mycontainer_v1 mydomain.com  # custom domain"
+    echo "  $0 /opt/nginx myservice 8080 mycontainer_v1 /            # uses example.com and www.example.com"
     exit 1
 fi
 
 NGINX_BASE_DIR=$1
 SERVICE_NAME=$2
 SERVICE_PORT=$3
-DOMAIN_INPUT=${4:-""}
+CONTAINER_NAME=$4
+DOMAIN_INPUT=${5:-""}
 NGINX_CONF_DIR="$NGINX_BASE_DIR/conf.d"
 NGINX_CONTAINER="nginx_proxy"
 
@@ -89,7 +90,7 @@ http {
 EOF
 fi
 
-echo "Configuring service '$SERVICE_NAME' on port $SERVICE_PORT..."
+echo "Configuring service '$SERVICE_NAME' with container '$CONTAINER_NAME' on port $SERVICE_PORT..."
 echo "Domain: $DOMAIN_NAME"
 if [[ -n "$DOMAIN_ALIAS" ]]; then
     echo "Domain Alias: $DOMAIN_ALIAS"
@@ -124,10 +125,18 @@ else
         || echo "Certificate may already exist or certbot failed."
 fi
 
-# 3. Write Nginx config with SSL + load balancing
-tee "$NGINX_CONF_FILE" > /dev/null <<EOF
+# 3. Write or update Nginx config with SSL + load balancing
+if [[ -f "$NGINX_CONF_FILE" ]]; then
+    echo "[INFO] Updating existing config $NGINX_CONF_FILE"
+    # Append container to upstream if not already listed
+    if ! grep -q "server $CONTAINER_NAME:$SERVICE_PORT;" "$NGINX_CONF_FILE"; then
+        sed -i "/upstream ${SERVICE_NAME}_upstream {/a \    server $CONTAINER_NAME:$SERVICE_PORT;" "$NGINX_CONF_FILE"
+    fi
+else
+    echo "[INFO] Creating new config $NGINX_CONF_FILE"
+    tee "$NGINX_CONF_FILE" > /dev/null <<EOF
 upstream ${SERVICE_NAME}_upstream {
-    server host.docker.internal:$SERVICE_PORT;
+    server $CONTAINER_NAME:$SERVICE_PORT;
 }
 
 server {
@@ -152,11 +161,12 @@ server {
     }
 }
 EOF
+fi
 
-echo "Nginx config with SSL written to $NGINX_CONF_FILE"
+echo "Nginx config updated at $NGINX_CONF_FILE"
 
 # 4. Reload Nginx container
 echo "Reloading Nginx container..."
 nerdctl exec "$NGINX_CONTAINER" nginx -s reload
 
-echo "✅ Service '$SERVICE_NAME' configured with SSL at $DOMAIN_NAME${DOMAIN_ALIAS:+, $DOMAIN_ALIAS} and load balancing enabled."
+echo "✅ Service '$SERVICE_NAME' with container '$CONTAINER_NAME' configured at $DOMAIN_NAME${DOMAIN_ALIAS:+, $DOMAIN_ALIAS}."
