@@ -49,6 +49,14 @@ http {
 EOF
 fi
 
+# Ensure nginx_network exists
+if ! sudo nerdctl network ls | awk '{print $2}' | grep -q '^nginx_network$'; then
+  echo "[INFO] Creating network: nginx_network"
+  sudo nerdctl network create nginx_network
+else
+  echo "[INFO] Network nginx_network already exists"
+fi
+
 # Stop existing container if running
 if sudo nerdctl ps -a --format '{{.Names}}' | grep -q '^nginx_proxy$'; then
   echo "[INFO] Stopping and removing existing nginx_proxy container..."
