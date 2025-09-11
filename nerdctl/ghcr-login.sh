@@ -1,6 +1,6 @@
 #!/bin/bash
 # Secure script to login to GitHub Container Registry with nerdctl
-# Auto-installs dependencies and configures credential helper on first run.
+# Auto-installs dependencies and configures credential helper based on environment.
 # Usage: ./ghcr-login.sh <github-username>
 
 if [ $# -ne 1 ]; then
@@ -10,21 +10,29 @@ fi
 
 USERNAME=$1
 
-# Check for jq
+# --- Dependency checks ---
 if ! command -v jq &>/dev/null; then
   echo "jq not found. Installing..."
   sudo apt-get update -y
   sudo apt-get install -y jq
 fi
 
-# Check for docker credential helper
-if ! command -v docker-credential-secretservice &>/dev/null; then
-  echo "docker-credential-secretservice not found. Installing..."
+if ! command -v docker-credential-store &>/dev/null; then
+  echo "docker credential helpers not found. Installing..."
   sudo apt-get update -y
   sudo apt-get install -y golang-docker-credential-helpers
 fi
 
-# Determine config file location
+# --- Decide which credsStore to use ---
+if command -v docker-credential-secretservice &>/dev/null && pgrep -x "dbus-daemon" >/dev/null; then
+  CRED_STORE="secretservice"
+else
+  CRED_STORE="store"
+fi
+
+echo "Using credential helper: $CRED_STORE"
+
+# --- Determine config file location ---
 if [ "$(id -u)" -eq 0 ]; then
   CONFIG_FILE="/etc/nerdctl/config.json"
 else
@@ -34,26 +42,30 @@ fi
 # Ensure config directory exists
 mkdir -p "$(dirname "$CONFIG_FILE")"
 
-# Configure credsStore if not present
+# --- Write config with credsStore ---
 if [ ! -f "$CONFIG_FILE" ]; then
-  echo "Configuring credential helper (secretservice)..."
+  echo "Creating new nerdctl config with $CRED_STORE..."
   cat > "$CONFIG_FILE" <<EOF
 {
   "auths": {},
-  "credsStore": "secretservice"
+  "credsStore": "$CRED_STORE"
 }
 EOF
 else
   if ! grep -q '"credsStore"' "$CONFIG_FILE"; then
-    echo "Adding credential helper (secretservice) to existing config..."
+    echo "Adding $CRED_STORE credential helper to existing config..."
     tmpfile=$(mktemp)
-    jq '. + {"credsStore":"secretservice"}' "$CONFIG_FILE" > "$tmpfile" && mv "$tmpfile" "$CONFIG_FILE"
+    jq --arg cs "$CRED_STORE" '. + {"credsStore":$cs}' "$CONFIG_FILE" > "$tmpfile" && mv "$tmpfile" "$CONFIG_FILE"
+  else
+    echo "Updating credential helper to $CRED_STORE..."
+    tmpfile=$(mktemp)
+    jq --arg cs "$CRED_STORE" '.credsStore = $cs' "$CONFIG_FILE" > "$tmpfile" && mv "$tmpfile" "$CONFIG_FILE"
   fi
 fi
 
-# Prompt securely for token (hidden input)
+# --- Secure token prompt ---
 read -s -p "Enter GitHub Personal Access Token: " TOKEN
 echo ""
 
-# Login with nerdctl
+# --- Login with nerdctl ---
 echo "$TOKEN" | nerdctl login ghcr.io -u "$USERNAME" --password-stdin
