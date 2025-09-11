@@ -17,7 +17,12 @@ mkdir -p $VOLUME_PATH/conf.d
 mkdir -p $VOLUME_PATH/letsencrypt
 mkdir -p $VOLUME_PATH/html
 
-# Ensure nginx.conf exists
+# Ensure nginx.conf exists and is a file
+if [ -d "$VOLUME_PATH/nginx.conf" ]; then
+  echo "[ERROR] $VOLUME_PATH/nginx.conf is a directory, removing it..."
+  rm -rf "$VOLUME_PATH/nginx.conf"
+fi
+
 if [ ! -f "$VOLUME_PATH/nginx.conf" ]; then
   echo "[WARN] $VOLUME_PATH/nginx.conf not found, creating a default one..."
   cat <<EOF > $VOLUME_PATH/nginx.conf
@@ -71,7 +76,8 @@ sudo nerdctl run -d \
   --network nginx_network \
   --restart always \
   -p 80:80 -p 443:443 \
-  -v $VOLUME_PATH:/etc/nginx \
+  -v $VOLUME_PATH/nginx.conf:/etc/nginx/nginx.conf:ro \
+  -v $VOLUME_PATH/conf.d:/etc/nginx/conf.d \
   -v $VOLUME_PATH/letsencrypt:/etc/letsencrypt \
   -v $VOLUME_PATH/html:/usr/share/nginx/html \
   nginx:alpine
