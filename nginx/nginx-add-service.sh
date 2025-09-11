@@ -33,8 +33,8 @@ mkdir -p "$NGINX_CONF_DIR"
 
 # Determine domain(s)
 if [[ "$DOMAIN_INPUT" == "/" ]]; then
-    DOMAIN_NAME="example.com"
-    DOMAIN_ALIAS="www.example.com"
+    DOMAIN_NAME="energymixtech.com"
+    DOMAIN_ALIAS="www.energymixtech.com"
 elif [[ -z "$DOMAIN_INPUT" ]]; then
     DOMAIN_NAME="$SERVICE_NAME.example.com"
     DOMAIN_ALIAS=""
