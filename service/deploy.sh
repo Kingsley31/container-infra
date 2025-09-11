@@ -93,17 +93,41 @@ nerdctl run -d \
   "$IMAGE_TAG"
 
 # -------------------------------
-# Health check
+# Network readiness + health check
 # -------------------------------
-echo "⏳ Waiting for container to become healthy..."
+echo "⏳ Waiting for container $CONTAINER_NAME to be reachable from nginx_proxy..."
+
+# Wait for container to be reachable from nginx_proxy network
+for i in {1..10}; do
+  if nerdctl exec nginx_proxy ping -c1 -W1 $CONTAINER_NAME &>/dev/null; then
+    echo "✅ Container is reachable on nginx_network!"
+    break
+  else
+    echo "⚠️ Container not reachable from nginx_proxy yet..."
+    sleep 2
+  fi
+done
+
+# If still unreachable after 10 attempts, abort
+if ! nerdctl exec nginx_proxy ping -c1 -W1 $CONTAINER_NAME &>/dev/null; then
+  echo "❌ Container is not reachable from nginx_proxy after multiple attempts."
+  nerdctl stop "$CONTAINER_NAME" >/dev/null 2>&1 || true
+  nerdctl rm "$CONTAINER_NAME" >/dev/null 2>&1 || true
+  exit 1
+fi
+
+# Now check service health on the host port
+echo "⏳ Checking service health on localhost:$APP_PORT..."
 success=false
 for i in {1..10}; do
   if curl -s http://localhost:$APP_PORT/health | grep "ok" >/dev/null; then
     success=true
     echo "✅ Container is healthy!"
     break
+  else
+    echo "⚠️ Health endpoint not ready yet..."
+    sleep 2
   fi
-  sleep 5
 done
 
 if [ "$success" != true ]; then
