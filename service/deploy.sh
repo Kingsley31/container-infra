@@ -1,42 +1,41 @@
 #!/bin/bash
-set -e
+set -euo pipefail
 
 # -------------------------------
 # Inputs
 # -------------------------------
-SERVICE_NAME=$1     # e.g., myapp
-IMAGE_NAME=$2       # e.g., myapp
-VERSION=$3          # e.g., v1.2.3
+NGINX_BASE_DIR=$1    # e.g., /home/username/nginx
+SERVICE_NAME=$2      # e.g., myapp
+IMAGE_NAME=$3        # e.g., myapp
+VERSION=$4           # e.g., v1.2.3
+shift 4
 
-if [ -z "$SERVICE_NAME" ] || [ -z "$IMAGE_NAME" ] || [ -z "$VERSION" ]; then
-  echo "Usage: $0 <service_name> <image_name> <version> [ENV_VARS...]"
+if [ -z "$NGINX_BASE_DIR" ] || [ -z "$SERVICE_NAME" ] || [ -z "$IMAGE_NAME" ] || [ -z "$VERSION" ]; then
+  echo "Usage: $0 <nginx_base_dir> <service_name> <image_name> <version> [ENV_VARS...]"
   exit 1
 fi
+
+ENV_VARS=("$@")  # Optional environment variables
 
 CONTAINER_NAME="${SERVICE_NAME}_${VERSION}"
 IMAGE_TAG="${IMAGE_NAME}:${VERSION}"
 
-# Capture optional env vars (from 4th argument onwards)
-ENV_VARS=("${@:4}")
-
 # -------------------------------
 # Deployment history files
 # -------------------------------
-HISTORY_DIR="../deploy_history"
+HISTORY_DIR="$NGINX_BASE_DIR/deploy_history"
 mkdir -p "$HISTORY_DIR"
 
 ACTIVE_FILE="$HISTORY_DIR/${SERVICE_NAME}_active_version"
 HISTORY_FILE="$HISTORY_DIR/${SERVICE_NAME}_history"
 
-touch "$ACTIVE_FILE"
-touch "$HISTORY_FILE"
+touch "$ACTIVE_FILE" "$HISTORY_FILE"
 
 # -------------------------------
 # Paths
 # -------------------------------
-NGINX_BASE_DIR="../nginx"
-mkdir -p "${NGINX_BASE_DIR}/conf.d"
-NGINX_CONF="${NGINX_BASE_DIR}/conf.d/${SERVICE_NAME}.conf"
+mkdir -p "$NGINX_BASE_DIR/conf.d"
+NGINX_CONF="$NGINX_BASE_DIR/conf.d/${SERVICE_NAME}.conf"
 
 # -------------------------------
 # Find a free port
@@ -74,8 +73,7 @@ echo "📌 Current active container: ${OLD_CONTAINER:-none} on port ${OLD_PORT:-
 # -------------------------------
 # Build environment variable flags
 # -------------------------------
-ENV_FLAGS=()
-ENV_FLAGS+=("-e" "PORT=$APP_PORT")   # Always pass PORT
+ENV_FLAGS=("-e" "PORT=$APP_PORT")  # Always pass PORT
 
 for VAR in "${ENV_VARS[@]}"; do
   ENV_FLAGS+=("-e" "$VAR")
@@ -87,7 +85,7 @@ done
 echo "🚀 Starting container $CONTAINER_NAME..."
 nerdctl run -d \
   --name "$CONTAINER_NAME" \
-  --network nginx_network \   # <-- IMPORTANT: same network as nginx
+  --network nginx_network \
   "${ENV_FLAGS[@]}" \
   -p "$APP_PORT:$APP_PORT" \
   "$IMAGE_TAG"
@@ -142,9 +140,6 @@ fi
 # -------------------------------
 echo "🔀 Updating Nginx upstream block for $SERVICE_NAME..."
 
-
-
-# If service config doesn't exist, create a minimal file with upstream
 if [ ! -f "$NGINX_CONF" ]; then
   cat > "$NGINX_CONF" <<EOL
 upstream ${SERVICE_NAME}_backend {
@@ -152,9 +147,7 @@ upstream ${SERVICE_NAME}_backend {
 }
 EOL
 else
-  # Replace existing upstream block or insert one if missing
   if grep -q "upstream ${SERVICE_NAME}_backend" "$NGINX_CONF"; then
-    # Cross-platform sed (macOS/Linux)
     if [[ "$OSTYPE" == "darwin"* ]]; then
       sed -i '' "/upstream ${SERVICE_NAME}_backend {/,/}/c\\
 upstream ${SERVICE_NAME}_backend {\\
@@ -164,7 +157,6 @@ upstream ${SERVICE_NAME}_backend {\\
       sed -i "/upstream ${SERVICE_NAME}_backend {/,/}/c upstream ${SERVICE_NAME}_backend {\n    server ${CONTAINER_NAME}:$APP_PORT;\n}" "$NGINX_CONF"
     fi
   else
-    # Append upstream block if not found
     cat >> "$NGINX_CONF" <<EOL
 
 upstream ${SERVICE_NAME}_backend {
@@ -176,7 +168,6 @@ fi
 
 # Reload nginx
 nerdctl exec nginx_proxy nginx -s reload
-
 
 # -------------------------------
 # Stop old container
