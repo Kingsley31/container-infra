@@ -82,7 +82,7 @@ done
 # -------------------------------
 # Run new container (same network as nginx_proxy)
 # -------------------------------
-echo "🚀 Starting container $CONTAINER_NAME..."
+echo "🚀 Starting container $CONTAINER_NAME...on $APP_PORT"
 sudo nerdctl run -d \
   --name "$CONTAINER_NAME" \
   --network nginx_network \
