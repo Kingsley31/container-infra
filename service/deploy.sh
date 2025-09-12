@@ -65,31 +65,27 @@ fi
 echo "📌 Current active container: ${OLD_CONTAINER:-none} on port ${OLD_PORT:-N/A}"
 
 # -------------------------------
-# Build environment flags from .env
-# -------------------------------
-ENV_FLAGS=("-e" "PORT=$APP_PORT")
-
-if [ -n "$ENV_FILE" ] && [ -f "$ENV_FILE" ]; then
-  while IFS='=' read -r key value; do
-    # Ignore empty lines or comments
-    [[ -z "$key" || "$key" =~ ^# ]] && continue
-    ENV_FLAGS+=("-e" "$key=$value")
-  done < "$ENV_FILE"
-fi
-
-# -------------------------------
-# Run new container
+# Run new container (same network as nginx_proxy)
 # -------------------------------
 echo "🚀 Starting container $CONTAINER_NAME on port $APP_PORT..."
-echo "🛠 Running command:"
-echo sudo nerdctl run -d --name "$CONTAINER_NAME" --network nginx_network "${ENV_FLAGS[@]}" -p "$APP_PORT:$APP_PORT" "$IMAGE_TAG"
 
-sudo nerdctl run -d \
-  --name "$CONTAINER_NAME" \
-  --network nginx_network \
-  "${ENV_FLAGS[@]}" \
-  -p "$APP_PORT:$APP_PORT" \
-  "$IMAGE_TAG"
+# Base flags
+RUN_FLAGS=("-d" --name "$CONTAINER_NAME" --network nginx_network -p "$APP_PORT:$APP_PORT")
+
+# Always pass PORT
+RUN_FLAGS+=("-e" "PORT=$APP_PORT")
+
+# If an env file was provided, pass it directly
+if [ -n "${ENV_FILE:-}" ] && [ -f "$ENV_FILE" ]; then
+    RUN_FLAGS+=("--env-file" "$ENV_FILE")
+fi
+
+# Debug: show final nerdctl command
+echo "🛠 Running command:"
+echo sudo nerdctl run "${RUN_FLAGS[@]}" "$IMAGE_TAG"
+
+# Execute nerdctl
+sudo nerdctl run "${RUN_FLAGS[@]}" "$IMAGE_TAG"
 
 # -------------------------------
 # Network readiness + health check
