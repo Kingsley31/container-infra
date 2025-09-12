@@ -73,14 +73,19 @@ echo "📌 Current active container: ${OLD_CONTAINER:-none} on port ${OLD_PORT:-
 # Run new container
 # -------------------------------
 echo "🚀 Starting container $CONTAINER_NAME on port $APP_PORT..."
-
+if [ ! -f "$ENV_FILE" ] || [ ! -r "$ENV_FILE" ]; then
+  echo "❌ Env file '$ENV_FILE' does not exist or is not readable"
+  exit 1
+fi
+# Run command and capture errors
 sudo nerdctl run -d \
   --name "$CONTAINER_NAME" \
   --network nginx_network \
   -p "$APP_PORT:$APP_PORT" \
   -e "PORT=$APP_PORT" \
   --env-file "$ENV_FILE" \
-  "$IMAGE_TAG"
+  "$IMAGE_TAG" \
+  2>&1 | tee /tmp/deploy_debug.log
 
 # -------------------------------
 # Network readiness check
