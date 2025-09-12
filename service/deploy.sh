@@ -8,14 +8,8 @@ NGINX_BASE_DIR=$1    # e.g., /home/username/nginx
 SERVICE_NAME=$2      # e.g., myapp
 IMAGE_NAME=$3        # e.g., myapp
 VERSION=$4           # e.g., v1.2.3
-shift 4
-
-if [ -z "$NGINX_BASE_DIR" ] || [ -z "$SERVICE_NAME" ] || [ -z "$IMAGE_NAME" ] || [ -z "$VERSION" ]; then
-  echo "Usage: $0 <nginx_base_dir> <service_name> <image_name> <version> [ENV_VARS...]"
-  exit 1
-fi
-
-ENV_VARS=("$@")  # Optional environment variables
+ENV_FILE=${5:-}      # optional: path to .env file
+shift 5
 
 CONTAINER_NAME="${SERVICE_NAME}_${VERSION}"
 IMAGE_TAG="${IMAGE_NAME}:${VERSION}"
@@ -71,44 +65,37 @@ fi
 echo "📌 Current active container: ${OLD_CONTAINER:-none} on port ${OLD_PORT:-N/A}"
 
 # -------------------------------
-# Run new container (same network as nginx_proxy)
+# Build environment flags from .env
 # -------------------------------
-echo "🚀 Starting container $CONTAINER_NAME on port $APP_PORT..."
-
-# Build environment flags safely
 ENV_FLAGS=("-e" "PORT=$APP_PORT")
 
-for VAR in "${ENV_VARS[@]}"; do
-    if [[ "$VAR" != *=* ]]; then
-        echo "⚠️ Ignoring invalid env var '$VAR'. Must be in VAR=value format."
-        continue
-    fi
-    ENV_FLAGS+=("-e" "$VAR")
-done
+if [ -n "$ENV_FILE" ] && [ -f "$ENV_FILE" ]; then
+  while IFS='=' read -r key value; do
+    # Ignore empty lines or comments
+    [[ -z "$key" || "$key" =~ ^# ]] && continue
+    ENV_FLAGS+=("-e" "$key=$value")
+  done < "$ENV_FILE"
+fi
 
-# Debug: show the final nerdctl command
+# -------------------------------
+# Run new container
+# -------------------------------
+echo "🚀 Starting container $CONTAINER_NAME on port $APP_PORT..."
 echo "🛠 Running command:"
-echo sudo nerdctl run -d \
-    --name "$CONTAINER_NAME" \
-    --network nginx_network \
-    "${ENV_FLAGS[@]}" \
-    -p "$APP_PORT:$APP_PORT" \
-    "$IMAGE_TAG"
+echo sudo nerdctl run -d --name "$CONTAINER_NAME" --network nginx_network "${ENV_FLAGS[@]}" -p "$APP_PORT:$APP_PORT" "$IMAGE_TAG"
 
-# Execute the nerdctl command
 sudo nerdctl run -d \
-    --name "$CONTAINER_NAME" \
-    --network nginx_network \
-    "${ENV_FLAGS[@]}" \
-    -p "$APP_PORT:$APP_PORT" \
-    "$IMAGE_TAG"
+  --name "$CONTAINER_NAME" \
+  --network nginx_network \
+  "${ENV_FLAGS[@]}" \
+  -p "$APP_PORT:$APP_PORT" \
+  "$IMAGE_TAG"
 
 # -------------------------------
 # Network readiness + health check
 # -------------------------------
 echo "⏳ Waiting for container $CONTAINER_NAME to be reachable from nginx_proxy..."
 
-# Wait for container to be reachable from nginx_proxy network
 for i in {1..10}; do
   if sudo nerdctl exec nginx_proxy ping -c1 -W1 $CONTAINER_NAME &>/dev/null; then
     echo "✅ Container is reachable on nginx_network!"
@@ -119,7 +106,6 @@ for i in {1..10}; do
   fi
 done
 
-# If still unreachable after 10 attempts, abort
 if ! sudo nerdctl exec nginx_proxy ping -c1 -W1 $CONTAINER_NAME &>/dev/null; then
   echo "❌ Container is not reachable from nginx_proxy after multiple attempts."
   sudo nerdctl stop "$CONTAINER_NAME" >/dev/null 2>&1 || true
@@ -127,7 +113,6 @@ if ! sudo nerdctl exec nginx_proxy ping -c1 -W1 $CONTAINER_NAME &>/dev/null; the
   exit 1
 fi
 
-# Now check service health on the host port
 echo "⏳ Checking service health on localhost:$APP_PORT..."
 success=false
 for i in {1..10}; do
@@ -149,7 +134,7 @@ if [ "$success" != true ]; then
 fi
 
 # -------------------------------
-# Update/create Nginx upstream for service
+# Update/create Nginx upstream
 # -------------------------------
 echo "🔀 Updating Nginx upstream block for $SERVICE_NAME..."
 
@@ -179,7 +164,6 @@ EOL
   fi
 fi
 
-# Reload nginx
 sudo nerdctl exec nginx_proxy nginx -s reload
 
 # -------------------------------
