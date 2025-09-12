@@ -71,24 +71,37 @@ fi
 echo "📌 Current active container: ${OLD_CONTAINER:-none} on port ${OLD_PORT:-N/A}"
 
 # -------------------------------
-# Build environment variable flags
-# -------------------------------
-ENV_FLAGS=("-e" "PORT=$APP_PORT")  # Always pass PORT
-
-for VAR in "${ENV_VARS[@]}"; do
-  ENV_FLAGS+=("-e" "$VAR")
-done
-
-# -------------------------------
 # Run new container (same network as nginx_proxy)
 # -------------------------------
-echo "🚀 Starting container $CONTAINER_NAME...on $APP_PORT"
+echo "🚀 Starting container $CONTAINER_NAME on port $APP_PORT..."
+
+# Build environment flags safely
+ENV_FLAGS=("-e" "PORT=$APP_PORT")
+
+for VAR in "${ENV_VARS[@]}"; do
+    if [[ "$VAR" != *=* ]]; then
+        echo "⚠️ Ignoring invalid env var '$VAR'. Must be in VAR=value format."
+        continue
+    fi
+    ENV_FLAGS+=("-e" "$VAR")
+done
+
+# Debug: show the final nerdctl command
+echo "🛠 Running command:"
+echo sudo nerdctl run -d \
+    --name "$CONTAINER_NAME" \
+    --network nginx_network \
+    "${ENV_FLAGS[@]}" \
+    -p "$APP_PORT:$APP_PORT" \
+    "$IMAGE_TAG"
+
+# Execute the nerdctl command
 sudo nerdctl run -d \
-  --name "$CONTAINER_NAME" \
-  --network nginx_network \
-  "${ENV_FLAGS[@]}" \
-  -p "$APP_PORT:$APP_PORT" \
-  "$IMAGE_TAG"
+    --name "$CONTAINER_NAME" \
+    --network nginx_network \
+    "${ENV_FLAGS[@]}" \
+    -p "$APP_PORT:$APP_PORT" \
+    "$IMAGE_TAG"
 
 # -------------------------------
 # Network readiness + health check
