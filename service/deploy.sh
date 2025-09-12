@@ -83,7 +83,7 @@ done
 # Run new container (same network as nginx_proxy)
 # -------------------------------
 echo "🚀 Starting container $CONTAINER_NAME..."
-nerdctl run -d \
+sudo nerdctl run -d \
   --name "$CONTAINER_NAME" \
   --network nginx_network \
   "${ENV_FLAGS[@]}" \
@@ -97,7 +97,7 @@ echo "⏳ Waiting for container $CONTAINER_NAME to be reachable from nginx_proxy
 
 # Wait for container to be reachable from nginx_proxy network
 for i in {1..10}; do
-  if nerdctl exec nginx_proxy ping -c1 -W1 $CONTAINER_NAME &>/dev/null; then
+  if sudo nerdctl exec nginx_proxy ping -c1 -W1 $CONTAINER_NAME &>/dev/null; then
     echo "✅ Container is reachable on nginx_network!"
     break
   else
@@ -107,10 +107,10 @@ for i in {1..10}; do
 done
 
 # If still unreachable after 10 attempts, abort
-if ! nerdctl exec nginx_proxy ping -c1 -W1 $CONTAINER_NAME &>/dev/null; then
+if ! sudo nerdctl exec nginx_proxy ping -c1 -W1 $CONTAINER_NAME &>/dev/null; then
   echo "❌ Container is not reachable from nginx_proxy after multiple attempts."
-  nerdctl stop "$CONTAINER_NAME" >/dev/null 2>&1 || true
-  nerdctl rm "$CONTAINER_NAME" >/dev/null 2>&1 || true
+  sudo nerdctl stop "$CONTAINER_NAME" >/dev/null 2>&1 || true
+  sudo nerdctl rm "$CONTAINER_NAME" >/dev/null 2>&1 || true
   exit 1
 fi
 
@@ -130,8 +130,8 @@ done
 
 if [ "$success" != true ]; then
   echo "❌ Health check failed!"
-  nerdctl stop "$CONTAINER_NAME" >/dev/null 2>&1 || true
-  nerdctl rm "$CONTAINER_NAME" >/dev/null 2>&1 || true
+  sudo nerdctl stop "$CONTAINER_NAME" >/dev/null 2>&1 || true
+  sudo nerdctl rm "$CONTAINER_NAME" >/dev/null 2>&1 || true
   exit 1
 fi
 
@@ -142,24 +142,24 @@ echo "🔀 Updating Nginx upstream block for $SERVICE_NAME..."
 
 if [ ! -f "$NGINX_CONF" ]; then
   cat > "$NGINX_CONF" <<EOL
-upstream ${SERVICE_NAME}_backend {
+upstream ${SERVICE_NAME}_upstream {
     server ${CONTAINER_NAME}:$APP_PORT;
 }
 EOL
 else
-  if grep -q "upstream ${SERVICE_NAME}_backend" "$NGINX_CONF"; then
+  if grep -q "upstream ${SERVICE_NAME}_upstream" "$NGINX_CONF"; then
     if [[ "$OSTYPE" == "darwin"* ]]; then
-      sed -i '' "/upstream ${SERVICE_NAME}_backend {/,/}/c\\
-upstream ${SERVICE_NAME}_backend {\\
+      sed -i '' "/upstream ${SERVICE_NAME}_upstream {/,/}/c\\
+upstream ${SERVICE_NAME}_upstream {\\
     server ${CONTAINER_NAME}:$APP_PORT;\\
 }" "$NGINX_CONF"
     else
-      sed -i "/upstream ${SERVICE_NAME}_backend {/,/}/c upstream ${SERVICE_NAME}_backend {\n    server ${CONTAINER_NAME}:$APP_PORT;\n}" "$NGINX_CONF"
+      sed -i "/upstream ${SERVICE_NAME}_upstream {/,/}/c upstream ${SERVICE_NAME}_upstream {\n    server ${CONTAINER_NAME}:$APP_PORT;\n}" "$NGINX_CONF"
     fi
   else
     cat >> "$NGINX_CONF" <<EOL
 
-upstream ${SERVICE_NAME}_backend {
+upstream ${SERVICE_NAME}_upstream {
     server ${CONTAINER_NAME}:$APP_PORT;
 }
 EOL
@@ -167,15 +167,15 @@ EOL
 fi
 
 # Reload nginx
-nerdctl exec nginx_proxy nginx -s reload
+sudo nerdctl exec nginx_proxy nginx -s reload
 
 # -------------------------------
 # Stop old container
 # -------------------------------
 if [ -n "$OLD_CONTAINER" ] && [ "$OLD_CONTAINER" != "$CONTAINER_NAME" ]; then
   echo "🧹 Stopping old container $OLD_CONTAINER..."
-  nerdctl stop "$OLD_CONTAINER" >/dev/null 2>&1 || true
-  nerdctl rm "$OLD_CONTAINER" >/dev/null 2>&1 || true
+  sudo nerdctl stop "$OLD_CONTAINER" >/dev/null 2>&1 || true
+  sudo nerdctl rm "$OLD_CONTAINER" >/dev/null 2>&1 || true
 fi
 
 # -------------------------------
