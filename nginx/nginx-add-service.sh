@@ -66,7 +66,7 @@ server {
     server_name $DOMAIN_NAME $DOMAIN_ALIAS;
 
     location /.well-known/acme-challenge/ {
-        root $NGINX_BASE_DIR/html;
+        root /usr/share/nginx/html;
     }
 
     location / {
