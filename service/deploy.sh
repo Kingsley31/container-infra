@@ -4,12 +4,17 @@ set -euo pipefail
 # -------------------------------
 # Inputs
 # -------------------------------
-NGINX_BASE_DIR=$1    # e.g., /home/username/nginx
-SERVICE_NAME=$2      # e.g., myapp
-IMAGE_NAME=$3        # e.g., myapp
-VERSION=$4           # e.g., v1.2.3
-ENV_FILE=${5:-}      # optional: path to .env file
+NGINX_BASE_DIR=$1      # e.g., /home/username/nginx
+SERVICE_NAME=$2        # e.g., backend
+IMAGE_NAME=$3          # e.g., ghcr.io/kingsley31/meter-bill-api
+VERSION=$4             # e.g., 2025.09.12.011309
+ENV_FILE=$5            # Absolute path to env file
 shift 5
+
+if [ -z "$NGINX_BASE_DIR" ] || [ -z "$SERVICE_NAME" ] || [ -z "$IMAGE_NAME" ] || [ -z "$VERSION" ] || [ -z "$ENV_FILE" ]; then
+  echo "Usage: $0 <nginx_base_dir> <service_name> <image_name> <version> <env_file>"
+  exit 1
+fi
 
 CONTAINER_NAME="${SERVICE_NAME}_${VERSION}"
 IMAGE_TAG="${IMAGE_NAME}:${VERSION}"
@@ -65,26 +70,10 @@ fi
 echo "📌 Current active container: ${OLD_CONTAINER:-none} on port ${OLD_PORT:-N/A}"
 
 # -------------------------------
-# Run new container (same network as nginx_proxy)
+# Run new container
 # -------------------------------
 echo "🚀 Starting container $CONTAINER_NAME on port $APP_PORT..."
 
-# Base flags
-RUN_FLAGS=("-d" --name "$CONTAINER_NAME" --network nginx_network -p "$APP_PORT:$APP_PORT")
-
-# Always pass PORT
-RUN_FLAGS+=("-e" "PORT=$APP_PORT")
-
-# If an env file was provided, pass it directly
-if [ -n "${ENV_FILE:-}" ] && [ -f "$ENV_FILE" ]; then
-    RUN_FLAGS+=("--env-file" "$ENV_FILE")
-fi
-
-# Debug: show final nerdctl command
-echo "🛠 Running command:"
-echo sudo nerdctl run "${RUN_FLAGS[@]}" "$IMAGE_TAG"
-
-# Execute nerdctl
 sudo nerdctl run -d \
   --name "$CONTAINER_NAME" \
   --network nginx_network \
@@ -94,10 +83,9 @@ sudo nerdctl run -d \
   "$IMAGE_TAG"
 
 # -------------------------------
-# Network readiness + health check
+# Network readiness check
 # -------------------------------
 echo "⏳ Waiting for container $CONTAINER_NAME to be reachable from nginx_proxy..."
-
 for i in {1..10}; do
   if sudo nerdctl exec nginx_proxy ping -c1 -W1 $CONTAINER_NAME &>/dev/null; then
     echo "✅ Container is reachable on nginx_network!"
@@ -115,6 +103,9 @@ if ! sudo nerdctl exec nginx_proxy ping -c1 -W1 $CONTAINER_NAME &>/dev/null; the
   exit 1
 fi
 
+# -------------------------------
+# Service health check
+# -------------------------------
 echo "⏳ Checking service health on localhost:$APP_PORT..."
 success=false
 for i in {1..10}; do
@@ -139,7 +130,6 @@ fi
 # Update/create Nginx upstream
 # -------------------------------
 echo "🔀 Updating Nginx upstream block for $SERVICE_NAME..."
-
 if [ ! -f "$NGINX_CONF" ]; then
   cat > "$NGINX_CONF" <<EOL
 upstream ${SERVICE_NAME}_upstream {
@@ -148,14 +138,7 @@ upstream ${SERVICE_NAME}_upstream {
 EOL
 else
   if grep -q "upstream ${SERVICE_NAME}_upstream" "$NGINX_CONF"; then
-    if [[ "$OSTYPE" == "darwin"* ]]; then
-      sed -i '' "/upstream ${SERVICE_NAME}_upstream {/,/}/c\\
-upstream ${SERVICE_NAME}_upstream {\\
-    server ${CONTAINER_NAME}:$APP_PORT;\\
-}" "$NGINX_CONF"
-    else
-      sed -i "/upstream ${SERVICE_NAME}_upstream {/,/}/c upstream ${SERVICE_NAME}_upstream {\n    server ${CONTAINER_NAME}:$APP_PORT;\n}" "$NGINX_CONF"
-    fi
+    sed -i "/upstream ${SERVICE_NAME}_upstream {/,/}/c upstream ${SERVICE_NAME}_upstream {\n    server ${CONTAINER_NAME}:$APP_PORT;\n}" "$NGINX_CONF"
   else
     cat >> "$NGINX_CONF" <<EOL
 
