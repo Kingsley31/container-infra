@@ -85,7 +85,13 @@ echo "🛠 Running command:"
 echo sudo nerdctl run "${RUN_FLAGS[@]}" "$IMAGE_TAG"
 
 # Execute nerdctl
-sudo nerdctl run "${RUN_FLAGS[@]}" "$IMAGE_TAG"
+sudo nerdctl run -d \
+  --name "$CONTAINER_NAME" \
+  --network nginx_network \
+  -p "$APP_PORT:$APP_PORT" \
+  -e "PORT=$APP_PORT" \
+  --env-file "$ENV_FILE" \
+  "$IMAGE_TAG"
 
 # -------------------------------
 # Network readiness + health check
