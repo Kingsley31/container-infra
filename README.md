@@ -1,6 +1,6 @@
 # CONTAINER INFRA
 
-This is a framework for running containerized workloads without zero or less downtime.
+This is a framework for running containerized workloads without zero or less downtime using containerd and nerdctl.
 
 ## Steps
 
