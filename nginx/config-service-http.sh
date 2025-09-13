@@ -1,20 +1,23 @@
 #!/bin/bash
-set -euo pipefail
 
-if [[ $EUID -ne 0 ]]; then
-    exec sudo "$0" "$@"
+if [ "$(id -u)" -ne 0 ]; then
+  echo "❌ Please run this script with sudo."
+  exit 1
 fi
 
-if [[ $# -lt 4 ]]; then
-    echo "Usage: $0 <nginx_base_dir> <service_name> <service_port> <container_name> [domain_name]"
+set -euo pipefail
+
+
+if [[ $# -lt 3 ]]; then
+    echo "Usage: $0 <service_name> <service_port> <container_name> [domain_name]"
     exit 1
 fi
 
-NGINX_BASE_DIR=$1
-SERVICE_NAME=$2
-SERVICE_PORT=$3
-CONTAINER_NAME=$4
-DOMAIN_INPUT=${5:-""}
+NGINX_BASE_DIR="/etc/container-infra/nginx"
+SERVICE_NAME=$1
+SERVICE_PORT=$2
+CONTAINER_NAME=$3
+DOMAIN_INPUT=${4:-""}
 
 NGINX_CONF_DIR="$NGINX_BASE_DIR/conf.d"
 NGINX_CONTAINER="nginx_proxy"
@@ -25,7 +28,14 @@ if ! nerdctl ps --format "{{.Names}}" | grep -qw "$CONTAINER_NAME"; then
     exit 1
 fi
 
-# --- Step 2: Minimal domain processing ---
+# --- Step 2: Verify Nginx can reach container ---
+if ! nerdctl exec "$NGINX_CONTAINER" wget -qO- http://127.0.0.1:$SERVICE_PORT/ >/dev/null 2>&1; then
+    echo "❌ Nginx cannot reach container '$CONTAINER_NAME' on '127.0.0.1:$SERVICE_PORT'."
+    exit 1
+fi
+echo "✅ Nginx can reach container '$CONTAINER_NAME' on '127.0.0.1:$SERVICE_PORT'."
+
+# --- Step 3: Minimal domain processing ---
 if [[ "$DOMAIN_INPUT" == "/" ]]; then
     DOMAIN_NAME="energymixtech.com"
 elif [[ -z "$DOMAIN_INPUT" ]]; then
@@ -40,10 +50,10 @@ else
 fi
 DOMAIN_ALIAS="www.$DOMAIN_NAME"
 
-# --- Step 3: Prepare directories ---
+# --- Step 4: Prepare directories ---
 mkdir -p "$NGINX_CONF_DIR" "$NGINX_BASE_DIR/html"
 
-# --- Step 4: Write temporary HTTP config with upstream ---
+# --- Step 5: Write temporary HTTP config with upstream ---
 NGINX_CONF_FILE="$NGINX_CONF_DIR/$SERVICE_NAME.conf"
 tee "$NGINX_CONF_FILE" > /dev/null <<EOF
 upstream ${SERVICE_NAME}_upstream {
@@ -67,16 +77,19 @@ server {
     }
 }
 EOF
-sleep 10
+
 # --- Step 5: Reload Nginx ---
+echo "Reloading nginx container..."
+sleep 10
 nerdctl exec "$NGINX_CONTAINER" nginx -t
 nerdctl exec "$NGINX_CONTAINER" nginx -s reload
 echo "✅ Temporary HTTP config with upstream applied."
 
-# --- Step 6: Verify Nginx can reach container ---
+# --- Step 6: Validate nginx container ---
+echo "Checking that nginx container is still running..."
 sleep 10
-if ! nerdctl exec "$NGINX_CONTAINER" wget -qO- http://127.0.0.1:$SERVICE_PORT/ >/dev/null 2>&1; then
-    echo "❌ Nginx cannot reach container '$CONTAINER_NAME' on '127.0.0.1:$SERVICE_PORT'."
+if ! nerdctl ps --format "{{.Names}}" | grep -qw "$NGINX_CONTAINER"; then
+    echo "❌ Container '$NGINX_CONTAINER' is not running."
     exit 1
 fi
-echo "✅ Nginx can reach container '$CONTAINER_NAME' on '127.0.0.1:$SERVICE_PORT'."
+echo "✅ Nginx container is still running!!!."
