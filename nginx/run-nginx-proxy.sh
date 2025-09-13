@@ -10,7 +10,7 @@ set -e
 
 
 VOLUME_PATH="/etc/container-infra/nginx"
-$NGINX_CONTAINER_NAME="nginx_proxy"
+NGINX_CONTAINER_NAME="nginx_proxy"
 
 echo "[INFO] Using Nginx volume path: $VOLUME_PATH"
 
