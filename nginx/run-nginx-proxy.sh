@@ -55,9 +55,21 @@ EOF
 fi
 
 # -------------------------------
-# SOLUTION: Ensure nginx listens on ports 80 and 443
+# FIXED: Ensure nginx listens on ports 80 and 443
 # -------------------------------
 echo "[INFO] Ensuring nginx listens on ports 80 and 443..."
+
+# Create a self-signed certificate for testing if it doesn't exist
+if [ ! -f "$VOLUME_PATH/letsencrypt/selfsigned.crt" ] || [ ! -f "$VOLUME_PATH/letsencrypt/selfsigned.key" ]; then
+    echo "[INFO] Generating self-signed SSL certificate for testing..."
+    mkdir -p $VOLUME_PATH/letsencrypt
+    openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
+      -keyout $VOLUME_PATH/letsencrypt/selfsigned.key \
+      -out $VOLUME_PATH/letsencrypt/selfsigned.crt \
+      -subj "/CN=localhost" 2>/dev/null
+fi
+
+# Create nginx configuration that uses the self-signed cert for testing
 cat <<EOF > $VOLUME_PATH/conf.d/default.conf
 # HTTP server
 server {
@@ -79,15 +91,15 @@ server {
     }
 }
 
-# HTTPS server (will work once SSL certificates are added)
+# HTTPS server with self-signed certificate for testing
 server {
-    listen 443 ssl http2;
-    listen [::]:443 ssl http2;
+    listen 443 ssl;
+    listen [::]:443 ssl;
     server_name _;
     
-    # SSL certificates (update these paths when you get real certificates)
-    ssl_certificate /etc/letsencrypt/live/your-domain.com/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/your-domain.com/privkey.pem;
+    # Use self-signed certificate for testing
+    ssl_certificate /etc/letsencrypt/selfsigned.crt;
+    ssl_certificate_key /etc/letsencrypt/selfsigned.key;
     
     # Health check endpoint
     location /health {
@@ -98,21 +110,11 @@ server {
     
     # Default response
     location / {
-        return 200 'Nginx HTTPS is running! Add your server configurations to /etc/nginx/conf.d/';
+        return 200 'Nginx HTTPS is running with self-signed certificate!';
         add_header Content-Type text/plain;
     }
 }
 EOF
-
-# Create a self-signed certificate for testing if it doesn't exist
-if [ ! -f "$VOLUME_PATH/letsencrypt/selfsigned.crt" ] || [ ! -f "$VOLUME_PATH/letsencrypt/selfsigned.key" ]; then
-    echo "[INFO] Generating self-signed SSL certificate for testing..."
-    mkdir -p $VOLUME_PATH/letsencrypt
-    openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
-      -keyout $VOLUME_PATH/letsencrypt/selfsigned.key \
-      -out $VOLUME_PATH/letsencrypt/selfsigned.crt \
-      -subj "/CN=localhost" 2>/dev/null
-fi
 
 # Ensure nginx_network exists
 if ! nerdctl network ls | awk '{print $2}' | grep -q '^nginx_network$'; then
@@ -143,7 +145,16 @@ nerdctl run -d \
 
 # Wait a moment for nginx to start
 echo "[INFO] Waiting for nginx to start..."
-sleep 3
+sleep 5
+
+# Check if container is running (not restarting)
+CONTAINER_STATUS=$(nerdctl inspect $NGINX_CONTAINER_NAME --format '{{.State.Status}}')
+if [ "$CONTAINER_STATUS" != "running" ]; then
+    echo "❌ Container is not running. Status: $CONTAINER_STATUS"
+    echo "📋 Container logs:"
+    nerdctl logs nginx_proxy
+    exit 1
+fi
 
 # Verify nginx is listening on ports 80 and 443
 echo "[INFO] Verifying nginx is listening on ports 80 and 443..."
@@ -155,12 +166,36 @@ else
     echo "ℹ️  Please check your nginx configuration if ports are not open."
 fi
 
-# Test the health endpoint
+# Test the health endpoint (with retries)
 echo "[INFO] Testing nginx health endpoint..."
-if curl -s http://localhost/health | grep -q healthy; then
+MAX_RETRIES=5
+RETRY_COUNT=0
+HEALTH_CHECK_PASSED=false
+
+while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
+    if curl -s --connect-timeout 5 http://localhost/health | grep -q healthy; then
+        HEALTH_CHECK_PASSED=true
+        break
+    fi
+    RETRY_COUNT=$((RETRY_COUNT+1))
+    echo "⚠️  Health check failed (attempt $RETRY_COUNT/$MAX_RETRIES), retrying in 2 seconds..."
+    sleep 2
+done
+
+if [ "$HEALTH_CHECK_PASSED" = true ]; then
     echo "✅ Nginx health check passed!"
 else
-    echo "⚠️  Nginx health check failed. Container may still be starting..."
+    echo "❌ Nginx health check failed after $MAX_RETRIES attempts."
+    echo "📋 Container logs:"
+    nerdctl logs nginx_proxy | tail -20
+    exit 1
+fi
+
+# Test HTTPS endpoint (ignore certificate errors)
+if curl -sk --connect-timeout 5 https://localhost/health | grep -q healthy; then
+    echo "✅ HTTPS health check passed!"
+else
+    echo "⚠️  HTTPS health check failed (this is normal for self-signed certs)"
 fi
 
 echo "✅ Nginx proxy is running and using configs from $VOLUME_PATH"
