@@ -93,46 +93,30 @@ nerdctl run -d \
   "$IMAGE_TAG" \
   2>&1 | tee /tmp/deploy_debug.log
 
-# -------------------------------
-# Network readiness check
-# -------------------------------
-echo "⏳ Waiting for container $CONTAINER_NAME to be reachable from nginx_proxy..."
-for i in {1..10}; do
-  if nerdctl exec nginx_proxy ping -c1 -W1 $CONTAINER_NAME &>/dev/null; then
-    echo "✅ Container is reachable on nginx_network!"
-    break
-  else
-    echo "⚠️ Container not reachable from nginx_proxy yet..."
-    sleep 2
-  fi
-done
 
-if ! nerdctl exec nginx_proxy ping -c1 -W1 $CONTAINER_NAME &>/dev/null; then
-  echo "❌ Container is not reachable from nginx_proxy after multiple attempts."
-  nerdctl stop "$CONTAINER_NAME" >/dev/null 2>&1 || true
-  nerdctl rm "$CONTAINER_NAME" >/dev/null 2>&1 || true
-  exit 1
-fi
 
 # -------------------------------
 # Service health check
 # -------------------------------
-echo "⏳ Checking service health on localhost:$APP_PORT..."
+echo "⏳ Waiting for container $CONTAINER_NAME to be reachable on port $APP_PORT..."
 success=false
 
 for i in {1..10}; do
-  if curl -sf "http://localhost:$APP_PORT/health" >/dev/null; then
+  # Check if the port is open and service is responding
+  if curl -sf --connect-timeout 2 "http://127.0.0.1:$APP_PORT/health" >/dev/null; then
     success=true
-    echo "✅ Container is healthy!"
+    echo "✅ Container is reachable and healthy!"
     break
   else
-    echo "⚠️ Health endpoint not ready yet..."
+    echo "⚠️ Service not reachable on port $APP_PORT yet (attempt $i/10)..."
     sleep 2
   fi
 done
 
 if [ "$success" != true ]; then
-  echo "❌ Health check failed!"
+  echo "❌ Service failed to become reachable on port $APP_PORT!"
+  echo "📋 Checking container status..."
+  nerdctl logs "$CONTAINER_NAME" | tail -20
   nerdctl stop "$CONTAINER_NAME" >/dev/null 2>&1 || true
   nerdctl rm "$CONTAINER_NAME" >/dev/null 2>&1 || true
   exit 1
