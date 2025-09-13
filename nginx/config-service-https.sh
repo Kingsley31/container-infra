@@ -130,11 +130,11 @@ server {
 
 server {
     listen 443 ssl http2;
-    listen [::]:443 ssl http2;
+    listen [::]:443 ssl;
     server_name $DOMAIN_NAME $DOMAIN_ALIAS;
 
-    ssl_certificate $LETSENCRYPT_DIR/live/$DOMAIN_NAME/fullchain.pem;
-    ssl_certificate_key $LETSENCRYPT_DIR/live/$DOMAIN_NAME/privkey.pem;
+    ssl_certificate /etc/letsencrypt/live/$DOMAIN_NAME/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/$DOMAIN_NAME/privkey.pem;
 
     # SSL configuration
     ssl_protocols TLSv1.2 TLSv1.3;
