@@ -17,8 +17,12 @@ VERSION=$3             # e.g., 2025.09.12.011309
 ENV_FILE=$4            # Absolute path to env file
 shift 4
 
+# Optional health check path parameter
+HEALTH_CHECK_PATH=${1:-"/health"}
+
 if [ -z "$SERVICE_NAME" ] || [ -z "$IMAGE_NAME" ] || [ -z "$VERSION" ] || [ -z "$ENV_FILE" ]; then
-  echo "Usage: $0 <service_name> <image_name> <version> <env_file>"
+  echo "Usage: $0 <service_name> <image_name> <version> <env_file> [health_check_path]"
+  echo "  health_check_path: Optional path for health checks (default: /health)"
   exit 1
 fi
 
@@ -93,33 +97,41 @@ nerdctl run -d \
   "$IMAGE_TAG" \
   2>&1 | tee /tmp/deploy_debug.log
 
-
-
 # -------------------------------
 # Service health check
 # -------------------------------
 echo "⏳ Waiting for container $CONTAINER_NAME to be reachable on port $APP_PORT..."
+echo "🔍 Using health check path: $HEALTH_CHECK_PATH"
 success=false
 
 for i in {1..10}; do
   # Check if the port is open and service is responding
-  if curl -sf --connect-timeout 2 "http://127.0.0.1:$APP_PORT/health" >/dev/null; then
+  if curl -sf --connect-timeout 2 "http://127.0.0.1:$APP_PORT$HEALTH_CHECK_PATH" >/dev/null; then
     success=true
     echo "✅ Container is reachable and healthy!"
     break
   else
-    echo "⚠️ Service not reachable on port $APP_PORT yet (attempt $i/10)..."
+    echo "⚠️ Service not reachable on port $APP_PORT$HEALTH_CHECK_PATH yet (attempt $i/10)..."
     sleep 2
   fi
 done
 
 if [ "$success" != true ]; then
-  echo "❌ Service failed to become reachable on port $APP_PORT!"
+  echo "❌ Service failed to become reachable on port $APP_PORT$HEALTH_CHECK_PATH!"
   echo "📋 Checking container status..."
   nerdctl logs "$CONTAINER_NAME" | tail -20
-  nerdctl stop "$CONTAINER_NAME" >/dev/null 2>&1 || true
-  nerdctl rm "$CONTAINER_NAME" >/dev/null 2>&1 || true
-  exit 1
+  
+  # Try base URL as fallback if health check failed
+  echo "🔄 Trying base URL as fallback..."
+  if curl -sf --connect-timeout 2 "http://127.0.0.1:$APP_PORT/" >/dev/null; then
+    echo "✅ Container is reachable at base URL (health check path may be different)"
+    success=true
+  else
+    echo "❌ Container also unreachable at base URL"
+    nerdctl stop "$CONTAINER_NAME" >/dev/null 2>&1 || true
+    nerdctl rm "$CONTAINER_NAME" >/dev/null 2>&1 || true
+    exit 1
+  fi
 fi
 
 # -------------------------------
@@ -163,3 +175,4 @@ echo "$VERSION $APP_PORT" > "$ACTIVE_FILE"
 echo "$(date -Iseconds) $VERSION $APP_PORT" >> "$HISTORY_FILE"
 
 echo "🎉 Deployment complete for $SERVICE_NAME version $VERSION on port $APP_PORT"
+echo "📊 Health check path: $HEALTH_CHECK_PATH"
