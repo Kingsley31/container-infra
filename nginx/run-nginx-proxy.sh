@@ -1,14 +1,16 @@
 #!/bin/bash
-set -e
 
-# Check if volume path is provided
-if [ -z "$1" ]; then
-  echo "Usage: $0 <volume-path>"
-  echo "Example: $0 /home/username/nginx"
+if [ "$(id -u)" -ne 0 ]; then
+  echo "❌ Please run this script with sudo."
   exit 1
 fi
 
-VOLUME_PATH=$1
+set -e
+
+
+
+VOLUME_PATH="/etc/container-infra/nginx"
+$NGINX_CONTAINER_NAME="nginx_proxy"
 
 echo "[INFO] Using Nginx volume path: $VOLUME_PATH"
 
@@ -55,31 +57,30 @@ EOF
 fi
 
 # Ensure nginx_network exists
-if ! sudo nerdctl network ls | awk '{print $2}' | grep -q '^nginx_network$'; then
+if ! nerdctl network ls | awk '{print $2}' | grep -q '^nginx_network$'; then
   echo "[INFO] Creating network: nginx_network"
-  sudo nerdctl network create nginx_network
+  nerdctl network create nginx_network
 else
   echo "[INFO] Network nginx_network already exists"
 fi
 
 # Stop existing container if running
-if sudo nerdctl ps -a --format '{{.Names}}' | grep -q '^nginx_proxy$'; then
+if nerdctl ps -a --format '{{.Names}}' | grep -q '^nginx_proxy$'; then
   echo "[INFO] Stopping and removing existing nginx_proxy container..."
-  sudo nerdctl stop nginx_proxy || true
-  sudo nerdctl rm nginx_proxy || true
+  nerdctl stop nginx_proxy || true
+  nerdctl rm nginx_proxy || true
 fi
 
 # Run nginx container with nerdctl
 echo "[INFO] Starting nginx_proxy container with volumes from $VOLUME_PATH"
-sudo nerdctl run -d \
-  --name nginx_proxy \
-  --network nginx_network \
+nerdctl run -d \
+  --name $NGINX_CONTAINER_NAME \
+  --network host \
   --restart always \
-  -p 80:80 -p 443:443 \
   -v $VOLUME_PATH/nginx.conf:/etc/nginx/nginx.conf:ro \
   -v $VOLUME_PATH/conf.d:/etc/nginx/conf.d \
   -v $VOLUME_PATH/letsencrypt:/etc/letsencrypt \
   -v $VOLUME_PATH/html:/usr/share/nginx/html \
-  nginx:alpine
+  docker.io/library/nginx:alpine
 
 echo "✅ Nginx proxy is running and using configs from $VOLUME_PATH"

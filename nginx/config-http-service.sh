@@ -47,7 +47,7 @@ mkdir -p "$NGINX_CONF_DIR" "$NGINX_BASE_DIR/html"
 NGINX_CONF_FILE="$NGINX_CONF_DIR/$SERVICE_NAME.conf"
 tee "$NGINX_CONF_FILE" > /dev/null <<EOF
 upstream ${SERVICE_NAME}_upstream {
-    server $CONTAINER_NAME:$SERVICE_PORT;
+    server 127.0.0.1:$SERVICE_PORT;
 }
 
 server {
@@ -75,8 +75,8 @@ echo "✅ Temporary HTTP config with upstream applied."
 
 # --- Step 6: Verify Nginx can reach container ---
 sleep 10
-if ! nerdctl exec "$NGINX_CONTAINER" wget -qO- http://$CONTAINER_NAME:$SERVICE_PORT/ >/dev/null 2>&1; then
-    echo "❌ Nginx cannot reach container '$CONTAINER_NAME:$SERVICE_PORT'."
+if ! nerdctl exec "$NGINX_CONTAINER" wget -qO- http://127.0.0.1:$SERVICE_PORT/ >/dev/null 2>&1; then
+    echo "❌ Nginx cannot reach container '$CONTAINER_NAME' on '127.0.0.1:$SERVICE_PORT'."
     exit 1
 fi
-echo "✅ Nginx can reach container '$CONTAINER_NAME:$SERVICE_PORT'."
+echo "✅ Nginx can reach container '$CONTAINER_NAME' on '127.0.0.1:$SERVICE_PORT'."
