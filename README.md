@@ -14,7 +14,7 @@ This is a framework for running containerized workloads without zero or less dow
 1. cd container-infra
 2. touch /path/to/.<your_service>.env
 3. nano /path/to/.<your_service>.env [paste your environment variables and save and exit]
-4. sudo ./service/deploy.sh <your_service> <imaage_name> <version_name> <path_to_env>
+4. sudo ./service/deploy.sh <your_service> <imaage_name> <version_name> <path_to_env> [health_check_path]
 5. sudo ./nginx/config-service-http.sh <your_service> <your_service_port> <container_name> [your_service_domain]
 6. sudo ./nginx/config-service-https.sh <your_service> <your_service_port> <container_name> [your_service_domain]
 
@@ -30,7 +30,7 @@ This is a framework for running containerized workloads without zero or less dow
 1. cd container-infra
 2. touch /home/energymixtech/.backend.env
 3. nano /home/energymixtech/.backend.env [paste your environment variables and save and exit]
-4. sudo ./service/deploy.sh backend ghcr.io/kingsley31/meter-bill-api 2025.09.12.011309 /home/energymixtech/.backend.env
+4. sudo ./service/deploy.sh backend ghcr.io/kingsley31/meter-bill-api 2025.09.12.011309 /home/energymixtech/.backend.env /health
 5. sudo ./nginx/config-service-http.sh backend 3000 backend_2025.09.12.011309 api.energymixtech.com
 6. sudo ./nginx/config-service-https.sh backend 3000 backend_2025.09.12.011309 api.energymixtech.com
 
@@ -39,6 +39,6 @@ This is a framework for running containerized workloads without zero or less dow
 1. cd container-infra
 2. touch /home/energymixtech/.frontend.env
 3. nano /home/energymixtech/.frontend.env [paste your environment variables and save and exit]
-4. sudo ./service/deploy.sh frontend ghcr.io/kingsley31/meter-bill-frontend 2025.09.10.132430 /home/energymixtech/.frontend.env
+4. sudo ./service/deploy.sh frontend ghcr.io/kingsley31/meter-bill-frontend 2025.09.10.132430 /home/energymixtech/.frontend.env /api/health
 5. sudo ./nginx/config-service-http.sh frontend 3001 frontend_2025.09.10.132430 /
 6. sudo ./nginx/config-service-https.sh frontend 3001 frontend_2025.09.10.132430 /
