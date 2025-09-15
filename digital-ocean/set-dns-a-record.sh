@@ -126,6 +126,7 @@ if [ "$RECORD_NAME" = "@" ]; then
 else
   # Subdomain → only ensure that specific subdomain
   ensure_a_record "$RECORD_NAME"
+  ensure_a_record "www.$RECORD_NAME"
 fi
 
 echo "🎉 DNS setup complete for $FULL_DOMAIN"
