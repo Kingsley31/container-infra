@@ -47,29 +47,28 @@ This ensures your credentials are never stored unencrypted in
     chmod +x ghcr-login.sh
     ```
 
+3. Export Required Login Details
+
+   ``` bash
+    export GHCR_TOKEN=your_github_token
+    export GHCR_USERNAME=your_github_username
+   ```
+
 ------------------------------------------------------------------------
 
 ## 🚀 Usage
 
-Run the script with your GitHub username:
+Run the script:
 
 ``` bash
-./ghcr-login.sh <github-username>
+./ghcr-login.sh
 ```
 
 Example:
 
 ``` bash
-./ghcr-login.sh johndoe
+./ghcr-login.sh
 ```
-
-It will prompt:
-
-```bash
-    Enter GitHub Personal Access Token:
-```
-
-Your input will remain hidden for security.
 
 ------------------------------------------------------------------------
 

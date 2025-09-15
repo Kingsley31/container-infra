@@ -1,4 +1,4 @@
-# run-nginx-proxy.sh
+# run-proxy.sh
 
 This script runs an Nginx reverse proxy inside a container using `nerdctl`.  
 It accepts a single argument: the base path where your Nginx configuration, certificates, and HTML files are stored.  
@@ -17,7 +17,7 @@ It accepts a single argument: the base path where your Nginx configuration, cert
 ## Usage
 
 ```bash
-chmod +x run-nginx-proxy.sh
+chmod +x run-proxy.sh
 
-./run-nginx-proxy.sh /home/username/nginx
+./run-proxy.sh
 ```

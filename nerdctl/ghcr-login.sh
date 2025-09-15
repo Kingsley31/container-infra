@@ -1,26 +1,30 @@
 #!/bin/bash
-# Secure script to login to GitHub Container Registry with nerdctl
-# Auto-installs dependencies and configures credential helper based on environment.
-# Usage: ./ghcr-login.sh <github-username>
 
-if [ $# -ne 1 ]; then
-  echo "Usage: $0 <github-username>"
+if [ "$(id -u)" -ne 0 ]; then
+  echo "❌ Please run this script with sudo."
   exit 1
 fi
 
-USERNAME=$1
+set -euo pipefail
+
+: "${GHCR_TOKEN:?❌ Environment variable GHCR_TOKEN not set. Please run: export GHCR_TOKEN=your_github_token}"
+: "${GHCR_USERNAME:?❌ Environment variable GHCR_USERNAME not set. Please run: export GHCR_USERNAME=your_github_username}"
+
+
+USERNAME=$GHCR_USERNAME
+TOKEN=$GHCR_TOKEN
 
 # --- Dependency checks ---
 if ! command -v jq &>/dev/null; then
   echo "jq not found. Installing..."
-  sudo apt-get update -y
-  sudo apt-get install -y jq
+  apt-get update -y
+  apt-get install -y jq
 fi
 
 if ! command -v docker-credential-store &>/dev/null; then
   echo "docker credential helpers not found. Installing..."
-  sudo apt-get update -y
-  sudo apt-get install -y golang-docker-credential-helpers
+  apt-get update -y
+  apt-get install -y golang-docker-credential-helpers
 fi
 
 # --- Decide which credsStore to use ---
@@ -63,9 +67,6 @@ else
   fi
 fi
 
-# --- Secure token prompt ---
-read -s -p "Enter GitHub Personal Access Token: " TOKEN
-echo ""
 
 # --- Login with nerdctl ---
-echo "$TOKEN" | sudo nerdctl login ghcr.io -u "$USERNAME" --password-stdin
+echo "$TOKEN" | nerdctl login ghcr.io -u "$USERNAME" --password-stdin

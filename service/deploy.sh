@@ -91,6 +91,7 @@ fi
 nerdctl run -d \
   --name "$CONTAINER_NAME" \
   --network host \
+  --restart always \
   -p "$APP_PORT:$APP_PORT" \
   -e "PORT=$APP_PORT" \
   --env-file "$ENV_FILE" \
