@@ -80,6 +80,9 @@ fi
 API_URL="https://api.digitalocean.com/v2"
 MAX_RETRIES=30
 RETRY_DELAY=10
+# Rate limiting variables
+RATE_LIMIT_DELAY=60  # Wait 60 seconds when rate limited
+MAX_RATE_LIMIT_RETRIES=5  # Max times to retry after rate limiting
 
 # Validate droplet ID is numeric
 if ! [[ "$DROPLET_ID" =~ ^[0-9]+$ ]]; then
@@ -101,39 +104,120 @@ else
     TARGET_NAME="$FQDN"
 fi
 
-# Function to make API requests with full error output
+# Function to check rate limit headers and handle accordingly
+check_rate_limit() {
+    local response="$1"
+    local http_status="$2"
+    
+    # Check for rate limit headers
+    local rate_limit_remaining
+    local rate_limit_reset
+    
+    # If we have full curl output with headers, parse them
+    if echo "$response" | grep -q "RateLimit-Remaining"; then
+        rate_limit_remaining=$(echo "$response" | grep -i "RateLimit-Remaining" | head -1 | tr -d '\r' | awk '{print $2}')
+        rate_limit_reset=$(echo "$response" | grep -i "RateLimit-Reset" | head -1 | tr -d '\r' | awk '{print $2}')
+    fi
+    
+    # Check for 429 Too Many Requests status
+    if [ "$http_status" -eq 429 ]; then
+        print_status "✗ Rate limited by DigitalOcean API (HTTP 429)" "$RED"
+        
+        # Try to get retry-after header
+        local retry_after
+        retry_after=$(echo "$response" | grep -i "Retry-After" | head -1 | tr -d '\r' | awk '{print $2}' || echo "")
+        
+        if [ -n "$retry_after" ] && [ "$retry_after" -gt 0 ]; then
+            print_status "API recommends waiting $retry_after seconds" "$YELLOW"
+            return $retry_after
+        else
+            print_status "No specific retry time provided, using default $RATE_LIMIT_DELAY seconds" "$YELLOW"
+            return $RATE_LIMIT_DELAY
+        fi
+    fi
+    
+    # Check if we're approaching rate limit
+    if [ -n "$rate_limit_remaining" ] && [ "$rate_limit_remaining" -lt 10 ]; then
+        print_status "⚠ Rate limit warning: Only $rate_limit_remaining requests remaining" "$YELLOW"
+        if [ -n "$rate_limit_reset" ]; then
+            print_status "Rate limit resets in $rate_limit_reset seconds" "$YELLOW"
+        fi
+    fi
+    
+    return 0
+}
+
+# Function to make API requests with full error output and rate limit handling
 do_api_request() {
     local endpoint="$1"
     local method="${2:-GET}"
     local data="${3:-}"
+    local attempt=1
+    local max_attempts=3
     
-    local curl_cmd=("curl" -s -w "\nHTTP_STATUS:%{http_code}" -X "$method" \
-        -H "Content-Type: application/json" \
-        -H "Authorization: Bearer $DO_API_TOKEN" \
-        "$API_URL/$endpoint")
-    
-    if [[ -n "$data" ]]; then
-        curl_cmd+=(-d "$data")
-    fi
-    
-    local response
-    response=$("${curl_cmd[@]}" 2>&1)
-    local exit_code=$?
-    
-    if [ $exit_code -ne 0 ]; then
-        echo "CURL_ERROR: Command failed with exit code $exit_code" >&2
-        echo "CURL_OUTPUT: $response" >&2
-        return $exit_code
-    fi
-    
-    # Extract HTTP status and response body
-    local http_status
-    http_status=$(echo "$response" | grep 'HTTP_STATUS:' | sed 's/HTTP_STATUS://')
-    local response_body
-    response_body=$(echo "$response" | sed '/HTTP_STATUS:/d')
-    
-    echo "$response_body"
-    return $http_status
+    while [ $attempt -le $max_attempts ]; do
+        local curl_cmd=("curl" -s -w "\nHTTP_STATUS:%{http_code}" -X "$method" \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Bearer $DO_API_TOKEN" \
+            "$API_URL/$endpoint")
+        
+        if [[ -n "$data" ]]; then
+            curl_cmd+=(-d "$data")
+        fi
+        
+        # Add verbose output for debugging on first attempt
+        if [ $attempt -eq 1 ]; then
+            print_status "Executing: curl -X $method $API_URL/$endpoint" "$YELLOW"
+        else
+            print_status "Retry attempt $attempt/$max_attempts..." "$YELLOW"
+        fi
+        
+        local response
+        response=$("${curl_cmd[@]}" 2>&1)
+        local exit_code=$?
+        
+        # Extract HTTP status and response body
+        local http_status
+        http_status=$(echo "$response" | grep 'HTTP_STATUS:' | sed 's/HTTP_STATUS://' | head -1)
+        local response_body
+        response_body=$(echo "$response" | sed '/HTTP_STATUS:/d')
+        
+        # Check if we got a valid HTTP status
+        if [[ "$http_status" =~ ^[0-9]+$ ]]; then
+            # Check for rate limiting
+            check_rate_limit "$response" "$http_status"
+            local rate_limit_wait=$?
+            
+            if [ $rate_limit_wait -gt 0 ]; then
+                if [ $attempt -lt $max_attempts ]; then
+                    print_status "Waiting $rate_limit_wait seconds due to rate limiting..." "$YELLOW"
+                    sleep $rate_limit_wait
+                    ((attempt++))
+                    continue
+                else
+                    print_status "Max rate limit retries exceeded" "$RED"
+                    echo "$response_body"
+                    return 429
+                fi
+            fi
+            
+            # Return successful response
+            echo "$response_body"
+            return $http_status
+        else
+            # Curl error (not HTTP error)
+            if [ $attempt -lt $max_attempts ]; then
+                print_status "Network error (attempt $attempt), retrying in 5 seconds..." "$YELLOW"
+                sleep 5
+                ((attempt++))
+                continue
+            else
+                print_status "CURL_ERROR: Command failed after $max_attempts attempts" "$RED"
+                print_status "CURL_OUTPUT: $response" "$RED"
+                return $exit_code
+            fi
+        fi
+    done
 }
 
 # Function to check if droplet exists
@@ -210,6 +294,8 @@ rename_droplet() {
             print_status "Droplet not found or inaccessible." "$RED"
         elif [ $exit_code -eq 422 ]; then
             print_status "Validation error. Check the droplet name format." "$RED"
+        elif [ $exit_code -eq 429 ]; then
+            print_status "Rate limited. Too many API requests." "$RED"
         fi
         
         return 1
@@ -289,12 +375,34 @@ verify_droplet_rename() {
     return 1
 }
 
+# Function to check current rate limit status
+check_rate_limit_status() {
+    print_status "Checking current API rate limit status..." "$BLUE"
+    local response
+    response=$(curl -s -I -H "Authorization: Bearer $DO_API_TOKEN" "$API_URL/account")
+    
+    local rate_limit_total=$(echo "$response" | grep -i "RateLimit-Limit" | head -1 | tr -d '\r' | awk '{print $2}' || echo "unknown")
+    local rate_limit_remaining=$(echo "$response" | grep -i "RateLimit-Remaining" | head -1 | tr -d '\r' | awk '{print $2}' || echo "unknown")
+    local rate_limit_reset=$(echo "$response" | grep -i "RateLimit-Reset" | head -1 | tr -d '\r' | awk '{print $2}' || echo "unknown")
+    
+    print_status "Rate Limit: $rate_limit_remaining/$rate_limit_total requests remaining" "$YELLOW"
+    if [ "$rate_limit_remaining" != "unknown" ] && [ "$rate_limit_remaining" -lt 50 ]; then
+        print_status "⚠ Warning: Low rate limit remaining" "$RED"
+    fi
+    if [ "$rate_limit_reset" != "unknown" ]; then
+        print_status "Rate limit resets in $rate_limit_reset seconds" "$YELLOW"
+    fi
+}
+
 # Main execution
 if [[ "$CLEANUP_MODE" == true ]]; then
     print_status "Starting cleanup process for droplet $DROPLET_ID..." "$YELLOW"
 else
     print_status "Starting PTR record configuration for droplet $DROPLET_ID..." "$YELLOW"
 fi
+
+# Check current rate limit status
+check_rate_limit_status
 
 # Check if droplet exists
 print_status "Checking if droplet $DROPLET_ID exists..." "$YELLOW"
