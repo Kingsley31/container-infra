@@ -108,42 +108,44 @@ fi
 check_rate_limit() {
     local response="$1"
     local http_status="$2"
-    
-    # Check for rate limit headers
-    local rate_limit_remaining
-    local rate_limit_reset
-    
+
+    # Initialize with safe defaults
+    local rate_limit_remaining=""
+    local rate_limit_reset=""
+
     # If we have full curl output with headers, parse them
     if echo "$response" | grep -q "RateLimit-Remaining"; then
         rate_limit_remaining=$(echo "$response" | grep -i "RateLimit-Remaining" | head -1 | tr -d '\r' | awk '{print $2}')
         rate_limit_reset=$(echo "$response" | grep -i "RateLimit-Reset" | head -1 | tr -d '\r' | awk '{print $2}')
     fi
-    
+
     # Check for 429 Too Many Requests status
     if [ "$http_status" -eq 429 ]; then
         print_status "✗ Rate limited by DigitalOcean API (HTTP 429)" "$RED"
-        
+
         # Try to get retry-after header
-        local retry_after
+        local retry_after=""
         retry_after=$(echo "$response" | grep -i "Retry-After" | head -1 | tr -d '\r' | awk '{print $2}' || echo "")
-        
+
         if [ -n "$retry_after" ] && [ "$retry_after" -gt 0 ]; then
             print_status "API recommends waiting $retry_after seconds" "$YELLOW"
-            return $retry_after
+            return "$retry_after"
         else
             print_status "No specific retry time provided, using default $RATE_LIMIT_DELAY seconds" "$YELLOW"
-            return $RATE_LIMIT_DELAY
+            return "$RATE_LIMIT_DELAY"
         fi
     fi
-    
+
     # Check if we're approaching rate limit
-    if [ -n "$rate_limit_remaining" ] && [ "$rate_limit_remaining" -lt 10 ]; then
-        print_status "⚠ Rate limit warning: Only $rate_limit_remaining requests remaining" "$YELLOW"
-        if [ -n "$rate_limit_reset" ]; then
-            print_status "Rate limit resets in $rate_limit_reset seconds" "$YELLOW"
+    if [ -n "$rate_limit_remaining" ]; then
+        if [ "$rate_limit_remaining" -lt 10 ]; then
+            print_status "⚠ Rate limit warning: Only $rate_limit_remaining requests remaining" "$YELLOW"
+            if [ -n "$rate_limit_reset" ]; then
+                print_status "Rate limit resets in $rate_limit_reset seconds" "$YELLOW"
+            fi
         fi
     fi
-    
+
     return 0
 }
 
