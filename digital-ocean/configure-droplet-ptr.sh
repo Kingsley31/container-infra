@@ -101,13 +101,13 @@ else
     TARGET_NAME="$FQDN"
 fi
 
-# Function to make API requests
+# Function to make API requests with full error output
 do_api_request() {
     local endpoint="$1"
     local method="${2:-GET}"
     local data="${3:-}"
     
-    local curl_cmd=("curl" -s -X "$method" \
+    local curl_cmd=("curl" -s -w "\nHTTP_STATUS:%{http_code}" -X "$method" \
         -H "Content-Type: application/json" \
         -H "Authorization: Bearer $DO_API_TOKEN" \
         "$API_URL/$endpoint")
@@ -116,36 +116,102 @@ do_api_request() {
         curl_cmd+=(-d "$data")
     fi
     
-    "${curl_cmd[@]}"
+    local response
+    response=$("${curl_cmd[@]}" 2>&1)
+    local exit_code=$?
+    
+    if [ $exit_code -ne 0 ]; then
+        echo "CURL_ERROR: Command failed with exit code $exit_code" >&2
+        echo "CURL_OUTPUT: $response" >&2
+        return $exit_code
+    fi
+    
+    # Extract HTTP status and response body
+    local http_status
+    http_status=$(echo "$response" | grep 'HTTP_STATUS:' | sed 's/HTTP_STATUS://')
+    local response_body
+    response_body=$(echo "$response" | sed '/HTTP_STATUS:/d')
+    
+    echo "$response_body"
+    return $http_status
 }
 
 # Function to check if droplet exists
 check_droplet_exists() {
     local response
     response=$(do_api_request "droplets/$DROPLET_ID")
+    local exit_code=$?
     
-    if echo "$response" | grep -q '"id"'; then
+    if [ $exit_code -eq 200 ] && echo "$response" | grep -q '"id"'; then
         return 0
     else
+        print_status "Droplet check failed with status: $exit_code" "$RED"
+        print_status "Response: $response" "$RED"
         return 1
     fi
 }
 
 # Function to get current droplet name
 get_droplet_name() {
-    do_api_request "droplets/$DROPLET_ID" | grep -o '"name":"[^"]*' | cut -d'"' -f4
+    local response
+    response=$(do_api_request "droplets/$DROPLET_ID")
+    local exit_code=$?
+    
+    if [ $exit_code -eq 200 ]; then
+        echo "$response" | grep -o '"name":"[^"]*' | cut -d'"' -f4
+    else
+        print_status "Failed to get droplet name. Status: $exit_code" "$RED"
+        print_status "Response: $response" "$RED"
+        return 1
+    fi
 }
 
-# Function to rename droplet (which sets PTR record)
+# Function to rename droplet (which sets PTR record) with detailed error output
 rename_droplet() {
     local new_name="$1"
     local data="{\"name\":\"$new_name\"}"
+    
+    print_status "Sending rename request to DigitalOcean API..." "$BLUE"
+    print_status "Request data: $data" "$YELLOW"
+    
     local response
     response=$(do_api_request "droplets/$DROPLET_ID" "PUT" "$data")
+    local exit_code=$?
     
-    if echo "$response" | grep -q '"id"'; then
-        return 0
+    print_status "API response status: $exit_code" "$BLUE"
+    print_status "API response body: $response" "$YELLOW"
+    
+    if [ $exit_code -eq 200 ]; then
+        if echo "$response" | grep -q '"id"'; then
+            print_status "✓ Rename request successful" "$GREEN"
+            return 0
+        else
+            print_status "✗ Rename request accepted but response format unexpected" "$YELLOW"
+            print_status "Response: $response" "$YELLOW"
+            return 1
+        fi
     else
+        print_status "✗ Rename request failed with HTTP status: $exit_code" "$RED"
+        
+        # Extract error message from response if available
+        local error_message
+        error_message=$(echo "$response" | grep -o '"message":"[^"]*' | cut -d'"' -f4 || echo "Unknown error")
+        
+        if [ -n "$error_message" ]; then
+            print_status "Error message: $error_message" "$RED"
+        fi
+        
+        # Check for specific common errors
+        if [ $exit_code -eq 401 ]; then
+            print_status "Authentication failed. Check your DO_API_TOKEN." "$RED"
+        elif [ $exit_code -eq 403 ]; then
+            print_status "Permission denied. Token may lack write permissions." "$RED"
+        elif [ $exit_code -eq 404 ]; then
+            print_status "Droplet not found or inaccessible." "$RED"
+        elif [ $exit_code -eq 422 ]; then
+            print_status "Validation error. Check the droplet name format." "$RED"
+        fi
+        
         return 1
     fi
 }
