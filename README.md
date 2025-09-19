@@ -44,3 +44,11 @@ This is a framework for running containerized workloads with zero downtime using
 5. sudo ./digital-ocean/set-dns-a-record.sh energymixtech.com 188.166.46.167
 6. sudo ./nginx/config-service-http.sh frontend 3001 frontend_2025.09.10.132430 / [Note: This is optional]
 7. sudo ./nginx/config-service-https.sh frontend 3001 frontend_2025.09.10.132430 /
+
+## Setup Mail Server
+
+1. cd container-infra
+
+2. export DO_API_TOKEN=your_digitalocean_api_token_here
+
+3. ./set-droplet-ptr.sh 517606015 mail.energymixtech.com

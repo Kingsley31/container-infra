@@ -1,0 +1,18 @@
+version: 1
+project: project name
+config-env: /home/user/.setup.env
+services:
+  - name: backend
+    description: my backedend app
+    domain: api.energymixtech.com
+    image-name: ghcr.io/kingsley31/meter-bill-api
+    version: 2025.09.12.011309
+    env-file: /home/energymixtech/.backend.env
+    health-path: /health
+  - name: frontend
+    description: my fronted app
+    domain: api.energymixtech.com
+    image-name: ghcr.io/kingsley31/meter-bill-frontend
+    version: 2025.09.10.132430
+    env-file: /home/energymixtech/.frontend.env
+    health-path: /api/health
