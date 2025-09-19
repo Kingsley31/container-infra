@@ -49,51 +49,46 @@ echo "⚙️ Updating local hostname to $FQDN..."
 hostnamectl set-hostname "$FQDN"
 echo "✓ Hostname set"
 
-
-
 # -------------------------------------------------
 # 3. Issue rename action
 # -------------------------------------------------
+echo "🔄 Sending rename action request..."
 RESPONSE=$(curl -s -X POST \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $DO_API_TOKEN" \
   -d "{\"type\":\"rename\",\"name\":\"$FQDN\"}" \
-  "https://api.digitalocean.com/v2/droplets/${$DROPLET_ID}/actions")
-
+  "https://api.digitalocean.com/v2/droplets/${DROPLET_ID}/actions")
 
 # Extract the action ID
-ACTION_ID=$(echo "$RESPONSE" | grep -o '"id":[0-9]*' | cut -d: -f2)
+ACTION_ID=$(echo "$RESPONSE" | jq -r '.action.id // empty')
 
 if [[ -z "$ACTION_ID" ]]; then
-  echo "Failed to initiate rename action. Response:"
+  echo "❌ Failed to initiate rename action. Response:"
   echo "$RESPONSE"
   exit 1
 fi
 
-echo "Rename action started (ID: $ACTION_ID). Waiting for completion..."
+echo "✅ Rename action started (ID: $ACTION_ID). Waiting for completion..."
 
 # -------------------------------------------------
 # 4. Poll action status
 # -------------------------------------------------
 while true; do
   STATUS=$(curl -s -H "Authorization: Bearer $DO_API_TOKEN" \
-    "https://api.digitalocean.com/v2/actions/${ACTION_ID}" |
-    grep -o '"status":"[^"]*' | cut -d\" -f4)
+    "$API/actions/${ACTION_ID}" | jq -r '.action.status')
 
   case "$STATUS" in
     completed)
-      echo "Droplet $DROPLET_ID successfully renamed to $FQDN."
+      echo "🎉 Droplet $DROPLET_ID successfully renamed to $FQDN."
       break
       ;;
     errored)
-      echo "Rename action errored. Check the DigitalOcean dashboard for details."
+      echo "❌ Rename action errored. Check the DigitalOcean dashboard for details."
       exit 1
       ;;
     *)
-      echo "Current status: $STATUS – checking again in 5 seconds..."
+      echo "⏳ Current status: $STATUS – checking again in 5 seconds..."
       sleep 5
       ;;
   esac
 done
-
-
