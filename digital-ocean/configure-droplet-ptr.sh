@@ -16,47 +16,28 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
-# Function to print colored output
 print_status() {
     echo -e "${2}${1}${NC}"
 }
 
-# Function to display usage
 usage() {
     echo "Usage: $0 <droplet-id> <fqdn> [--cleanup]"
-    echo "  droplet-id: DigitalOcean droplet ID"
-    echo "  fqdn: Fully Qualified Domain Name (e.g., server.example.com)"
-    echo "  --cleanup: Optional flag to revert to original hostname"
-    echo ""
-    echo "Environment Variables:"
-    echo "  DO_API_TOKEN: DigitalOcean API token (required)"
-    echo "  ORIGINAL_HOSTNAME: Original hostname for cleanup (optional)"
     exit 1
 }
 
-# Check if required environment variable is set
 if [[ -z "${DO_API_TOKEN:-}" ]]; then
     print_status "Error: DO_API_TOKEN environment variable is not set" "$RED"
-    echo "Please set your DigitalOcean API token:"
-    echo "  export DO_API_TOKEN=your_api_token_here"
-    echo "Or run: DO_API_TOKEN=your_token $0 <droplet-id> <fqdn> [--cleanup]"
     exit 1
 fi
 
-# Parse arguments
 CLEANUP_MODE=false
 DROPLET_ID=""
 FQDN=""
 
 while [[ $# -gt 0 ]]; do
     case $1 in
-        --cleanup)
-            CLEANUP_MODE=true
-            shift
-            ;;
-        --help|-h)
-            usage
-            ;;
+        --cleanup) CLEANUP_MODE=true; shift ;;
+        --help|-h) usage ;;
         *)
             if [[ -z "$DROPLET_ID" ]]; then
                 DROPLET_ID="$1"
@@ -71,288 +52,126 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-# Validate arguments
 if [[ -z "$DROPLET_ID" ]] || [[ -z "$FQDN" ]]; then
-    print_status "Error: Missing required arguments" "$RED"
     usage
 fi
 
 API_URL="https://api.digitalocean.com/v2"
 MAX_RETRIES=30
 RETRY_DELAY=10
-# Rate limiting variables
-RATE_LIMIT_DELAY=60  # Wait 60 seconds when rate limited
-MAX_RATE_LIMIT_RETRIES=5  # Max times to retry after rate limiting
 
-# Validate droplet ID is numeric
 if ! [[ "$DROPLET_ID" =~ ^[0-9]+$ ]]; then
-    print_status "Error: Droplet ID must be numeric: $DROPLET_ID" "$RED"
+    print_status "Error: Droplet ID must be numeric" "$RED"
     exit 1
 fi
 
-# In cleanup mode, FQDN is treated as the original hostname to revert to
 if [[ "$CLEANUP_MODE" == true ]]; then
     TARGET_NAME="$FQDN"
-    print_status "Cleanup mode: Reverting to original hostname: $TARGET_NAME" "$YELLOW"
 else
-    # Validate FQDN format (basic validation) only in set mode
     if ! [[ "$FQDN" =~ ^[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$ ]]; then
         print_status "Error: Invalid FQDN format: $FQDN" "$RED"
-        echo "Please provide a valid FQDN (e.g., server.example.com)"
         exit 1
     fi
     TARGET_NAME="$FQDN"
 fi
 
-# Function to check rate limit headers and handle accordingly
-check_rate_limit() {
-    local response="$1"
-    local http_status="$2"
-
-    # Initialize with safe defaults
-    local rate_limit_remaining=""
-    local rate_limit_reset=""
-
-    # If we have full curl output with headers, parse them
-    if echo "$response" | grep -q "RateLimit-Remaining"; then
-        rate_limit_remaining=$(echo "$response" | grep -i "RateLimit-Remaining" | head -1 | tr -d '\r' | awk '{print $2}')
-        rate_limit_reset=$(echo "$response" | grep -i "RateLimit-Reset" | head -1 | tr -d '\r' | awk '{print $2}')
-    fi
-
-    # Check for 429 Too Many Requests status
-    if [ "$http_status" -eq 429 ]; then
-        print_status "✗ Rate limited by DigitalOcean API (HTTP 429)" "$RED"
-
-        # Try to get retry-after header
-        local retry_after=""
-        retry_after=$(echo "$response" | grep -i "Retry-After" | head -1 | tr -d '\r' | awk '{print $2}' || echo "")
-
-        if [ -n "$retry_after" ] && [ "$retry_after" -gt 0 ]; then
-            print_status "API recommends waiting $retry_after seconds" "$YELLOW"
-            return "$retry_after"
-        else
-            print_status "No specific retry time provided, using default $RATE_LIMIT_DELAY seconds" "$YELLOW"
-            return "$RATE_LIMIT_DELAY"
-        fi
-    fi
-
-    # Check if we're approaching rate limit
-    if [ -n "$rate_limit_remaining" ]; then
-        if [ "$rate_limit_remaining" -lt 10 ]; then
-            print_status "⚠ Rate limit warning: Only $rate_limit_remaining requests remaining" "$YELLOW"
-            if [ -n "$rate_limit_reset" ]; then
-                print_status "Rate limit resets in $rate_limit_reset seconds" "$YELLOW"
-            fi
-        fi
-    fi
-
-    return 0
-}
-
-# Function to make API requests with full error output and rate limit handling
+##############################################
+# Core API request helper
+##############################################
 do_api_request() {
     local endpoint="$1"
     local method="${2:-GET}"
     local data="${3:-}"
-    local attempt=1
-    local max_attempts=3
-    
-    while [ $attempt -le $max_attempts ]; do
-        local curl_cmd=("curl" -s -w "\nHTTP_STATUS:%{http_code}" -X "$method" \
+
+    local response http_status response_body
+
+    if [[ -n "$data" ]]; then
+        response=$(curl -s -w "\n%{http_code}" -X "$method" \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Bearer $DO_API_TOKEN" \
+            -d "$data" \
+            "$API_URL/$endpoint")
+    else
+        response=$(curl -s -w "\n%{http_code}" -X "$method" \
             -H "Content-Type: application/json" \
             -H "Authorization: Bearer $DO_API_TOKEN" \
             "$API_URL/$endpoint")
-        
-        if [[ -n "$data" ]]; then
-            curl_cmd+=(-d "$data")
-        fi
-        
-        # Add verbose output for debugging on first attempt
-        if [ $attempt -eq 1 ]; then
-            print_status "Executing: curl -X $method $API_URL/$endpoint" "$YELLOW"
-        else
-            print_status "Retry attempt $attempt/$max_attempts..." "$YELLOW"
-        fi
-        
-        local response
-        response=$("${curl_cmd[@]}" 2>&1)
-        local exit_code=$?
-        
-        # Extract HTTP status and response body
-        local http_status
-        http_status=$(echo "$response" | grep 'HTTP_STATUS:' | sed 's/HTTP_STATUS://' | head -1)
-        local response_body
-        response_body=$(echo "$response" | sed '/HTTP_STATUS:/d')
-        
-        # Check if we got a valid HTTP status
-        if [[ "$http_status" =~ ^[0-9]+$ ]]; then
-            # Check for rate limiting
-            check_rate_limit "$response" "$http_status"
-            local rate_limit_wait=$?
-            
-            if [ $rate_limit_wait -gt 0 ]; then
-                if [ $attempt -lt $max_attempts ]; then
-                    print_status "Waiting $rate_limit_wait seconds due to rate limiting..." "$YELLOW"
-                    sleep $rate_limit_wait
-                    ((attempt++))
-                    continue
-                else
-                    print_status "Max rate limit retries exceeded" "$RED"
-                    echo "$response_body"
-                    return 429
-                fi
-            fi
-            
-            # Return successful response
-            echo "$response_body"
-            return $http_status
-        else
-            # Curl error (not HTTP error)
-            if [ $attempt -lt $max_attempts ]; then
-                print_status "Network error (attempt $attempt), retrying in 5 seconds..." "$YELLOW"
-                sleep 5
-                ((attempt++))
-                continue
-            else
-                print_status "CURL_ERROR: Command failed after $max_attempts attempts" "$RED"
-                print_status "CURL_OUTPUT: $response" "$RED"
-                return $exit_code
-            fi
-        fi
-    done
+    fi
+
+    http_status=$(echo "$response" | tail -n1)
+    response_body=$(echo "$response" | sed '$d')
+
+    echo "$http_status"
+    echo "$response_body"
 }
 
-# Function to check if droplet exists
+##############################################
+# Droplet helpers
+##############################################
 check_droplet_exists() {
     local response
     response=$(do_api_request "droplets/$DROPLET_ID")
-    local exit_code=$?
-    
-    if [ $exit_code -eq 200 ] && echo "$response" | grep -q '"id"'; then
+    local http_status=$(echo "$response" | head -n1)
+    local body=$(echo "$response" | tail -n +2)
+
+    if [ "$http_status" -eq 200 ] && echo "$body" | grep -q '"id"'; then
         return 0
     else
-        print_status "Droplet check failed with status: $exit_code" "$RED"
-        print_status "Response: $response" "$RED"
+        print_status "Droplet check failed. Status: $http_status" "$RED"
+        print_status "Response: $body" "$RED"
         return 1
     fi
 }
 
-# Function to get current droplet name
 get_droplet_name() {
     local response
     response=$(do_api_request "droplets/$DROPLET_ID")
-    local exit_code=$?
-    
-    if [ $exit_code -eq 200 ]; then
-        echo "$response" | grep -o '"name":"[^"]*' | cut -d'"' -f4
+    local http_status=$(echo "$response" | head -n1)
+    local body=$(echo "$response" | tail -n +2)
+
+    if [ "$http_status" -eq 200 ]; then
+        echo "$body" | grep -o '"name":"[^"]*' | cut -d'"' -f4
     else
-        print_status "Failed to get droplet name. Status: $exit_code" "$RED"
-        print_status "Response: $response" "$RED"
+        print_status "Failed to get droplet name. Status: $http_status" "$RED"
+        print_status "Response: $body" "$RED"
         return 1
     fi
 }
 
-# Function to rename droplet (which sets PTR record) with detailed error output
 rename_droplet() {
     local new_name="$1"
     local data="{\"name\":\"$new_name\"}"
-    
+
     print_status "Sending rename request to DigitalOcean API..." "$BLUE"
     print_status "Request data: $data" "$YELLOW"
-    
+
     local response
     response=$(do_api_request "droplets/$DROPLET_ID" "PUT" "$data")
-    local exit_code=$?
-    
-    print_status "API response status: $exit_code" "$BLUE"
-    print_status "API response body: $response" "$YELLOW"
-    
-    if [ $exit_code -eq 200 ]; then
-        if echo "$response" | grep -q '"id"'; then
-            print_status "✓ Rename request successful" "$GREEN"
-            return 0
-        else
-            print_status "✗ Rename request accepted but response format unexpected" "$YELLOW"
-            print_status "Response: $response" "$YELLOW"
-            return 1
-        fi
+    local http_status=$(echo "$response" | head -n1)
+    local body=$(echo "$response" | tail -n +2)
+
+    print_status "API response status: $http_status" "$BLUE"
+    print_status "API response body: $body" "$YELLOW"
+
+    if [ "$http_status" -eq 200 ]; then
+        print_status "✓ Rename request successful" "$GREEN"
+        return 0
     else
-        print_status "✗ Rename request failed with HTTP status: $exit_code" "$RED"
-        
-        # Extract error message from response if available
+        print_status "✗ Rename request failed with HTTP status: $http_status" "$RED"
         local error_message
-        error_message=$(echo "$response" | grep -o '"message":"[^"]*' | cut -d'"' -f4 || echo "Unknown error")
-        
-        if [ -n "$error_message" ]; then
-            print_status "Error message: $error_message" "$RED"
-        fi
-        
-        # Check for specific common errors
-        if [ $exit_code -eq 401 ]; then
-            print_status "Authentication failed. Check your DO_API_TOKEN." "$RED"
-        elif [ $exit_code -eq 403 ]; then
-            print_status "Permission denied. Token may lack write permissions." "$RED"
-        elif [ $exit_code -eq 404 ]; then
-            print_status "Droplet not found or inaccessible." "$RED"
-        elif [ $exit_code -eq 422 ]; then
-            print_status "Validation error. Check the droplet name format." "$RED"
-        elif [ $exit_code -eq 429 ]; then
-            print_status "Rate limited. Too many API requests." "$RED"
-        fi
-        
+        error_message=$(echo "$body" | grep -o '"message":"[^"]*' | cut -d'"' -f4 || echo "Unknown error")
+        print_status "Error message: $error_message" "$RED"
         return 1
     fi
 }
 
-# Function to set local hostname
-set_local_hostname() {
-    local hostname="$1"
-    
-    print_status "Setting local hostname to: $hostname" "$BLUE"
-    
-    # Backup current configuration
-    if [[ ! -f "/etc/hostname.bak" ]] && [[ -f "/etc/hostname" ]]; then
-        cp /etc/hostname /etc/hostname.bak
-        print_status "✓ Backed up /etc/hostname" "$GREEN"
-    fi
-    
-    # Set hostname using hostnamectl (systemd)
-    if command -v hostnamectl >/dev/null 2>&1; then
-        hostnamectl set-hostname "$hostname"
-        print_status "✓ Hostname set using hostnamectl" "$GREEN"
-    else
-        # Fallback to traditional method
-        echo "$hostname" | tee /etc/hostname >/dev/null
-        hostname "$hostname"
-        print_status "✓ Hostname set using traditional method" "$GREEN"
-    fi
-    
-    # Update /etc/hosts if needed
-    if ! grep -q "^127.0.1.1.*$hostname" /etc/hosts; then
-        # Backup hosts file if not already backed up
-        if [[ ! -f "/etc/hosts.bak" ]] && [[ -f "/etc/hosts" ]]; then
-            cp /etc/hosts /etc/hosts.bak
-            print_status "✓ Backed up /etc/hosts" "$GREEN"
-        fi
-        
-        # Remove any existing 127.0.1.1 entry
-        sed -i '/^127.0.1.1/d' /etc/hosts
-        # Add new entry
-        echo "127.0.1.1 $hostname" | tee -a /etc/hosts >/dev/null
-        print_status "✓ Updated /etc/hosts" "$GREEN"
-    fi
-}
-
-# Function to verify droplet rename with retries
 verify_droplet_rename() {
     local expected_name="$1"
     local attempt=1
-    
-    print_status "Verifying droplet rename (max $MAX_RETRIES attempts, ${RETRY_DELAY}s intervals)..." "$BLUE"
-    
+
+    print_status "Verifying droplet rename (max $MAX_RETRIES attempts)..." "$BLUE"
+
     while [[ $attempt -le $MAX_RETRIES ]]; do
-        print_status "Attempt $attempt/$MAX_RETRIES: Checking droplet name..." "$YELLOW"
-        
         local current_name
         if current_name=$(get_droplet_name 2>/dev/null); then
             if [[ "$current_name" == "$expected_name" ]]; then
@@ -361,102 +180,52 @@ verify_droplet_rename() {
             else
                 print_status "Current name: $current_name (waiting for: $expected_name)" "$YELLOW"
             fi
-        else
-            print_status "Failed to get droplet name (attempt $attempt)" "$YELLOW"
         fi
-        
-        if [[ $attempt -lt $MAX_RETRIES ]]; then
-            print_status "Waiting ${RETRY_DELAY} seconds before next check..." "$YELLOW"
-            sleep $RETRY_DELAY
-        fi
-        
+        sleep $RETRY_DELAY
         ((attempt++))
     done
-    
-    print_status "✗ Failed to verify droplet rename after $MAX_RETRIES attempts" "$RED"
     return 1
 }
 
-# Function to check current rate limit status
-check_rate_limit_status() {
-    print_status "Checking current API rate limit status..." "$BLUE"
-    local response
-    response=$(curl -s -I -H "Authorization: Bearer $DO_API_TOKEN" "$API_URL/account")
-    
-    local rate_limit_total=$(echo "$response" | grep -i "RateLimit-Limit" | head -1 | tr -d '\r' | awk '{print $2}' || echo "unknown")
-    local rate_limit_remaining=$(echo "$response" | grep -i "RateLimit-Remaining" | head -1 | tr -d '\r' | awk '{print $2}' || echo "unknown")
-    local rate_limit_reset=$(echo "$response" | grep -i "RateLimit-Reset" | head -1 | tr -d '\r' | awk '{print $2}' || echo "unknown")
-    
-    print_status "Rate Limit: $rate_limit_remaining/$rate_limit_total requests remaining" "$YELLOW"
-    if [ "$rate_limit_remaining" != "unknown" ] && [ "$rate_limit_remaining" -lt 50 ]; then
-        print_status "⚠ Warning: Low rate limit remaining" "$RED"
+##############################################
+# Local hostname
+##############################################
+set_local_hostname() {
+    local hostname="$1"
+    print_status "Setting local hostname to: $hostname" "$BLUE"
+    if command -v hostnamectl >/dev/null 2>&1; then
+        hostnamectl set-hostname "$hostname"
+    else
+        echo "$hostname" > /etc/hostname
+        hostname "$hostname"
     fi
-    if [ "$rate_limit_reset" != "unknown" ]; then
-        print_status "Rate limit resets in $rate_limit_reset seconds" "$YELLOW"
-    fi
+    print_status "✓ Hostname set" "$GREEN"
 }
 
-# Main execution
+##############################################
+# Main
+##############################################
 if [[ "$CLEANUP_MODE" == true ]]; then
-    print_status "Starting cleanup process for droplet $DROPLET_ID..." "$YELLOW"
+    print_status "Starting cleanup for droplet $DROPLET_ID..." "$YELLOW"
 else
     print_status "Starting PTR record configuration for droplet $DROPLET_ID..." "$YELLOW"
 fi
 
-# Check current rate limit status
-check_rate_limit_status
-
-# Check if droplet exists
-print_status "Checking if droplet $DROPLET_ID exists..." "$YELLOW"
 if ! check_droplet_exists; then
     print_status "Error: Droplet $DROPLET_ID not found or inaccessible" "$RED"
-    if [[ "$CLEANUP_MODE" == true ]]; then
-        print_status "Continuing with local hostname cleanup only..." "$YELLOW"
-    else
-        exit 1
-    fi
+    exit 1
 fi
 
-# Get current droplet name if available
-if check_droplet_exists; then
-    current_name=$(get_droplet_name)
-    print_status "Current droplet name: $current_name" "$GREEN"
-fi
+current_name=$(get_droplet_name)
+print_status "Current droplet name: $current_name" "$GREEN"
 
-# Set local hostname
-print_status "Updating local machine hostname..." "$BLUE"
 set_local_hostname "$TARGET_NAME"
 
-# Rename droplet to set/cleanup PTR record
-if check_droplet_exists; then
-    print_status "Renaming droplet to: $TARGET_NAME" "$YELLOW"
-    if rename_droplet "$TARGET_NAME"; then
-        print_status "✓ Rename request accepted by DigitalOcean API" "$GREEN"
-        
-        # Verify the droplet was actually renamed
-        if verify_droplet_rename "$TARGET_NAME"; then
-            print_status "✓ Droplet rename confirmed successfully!" "$GREEN"
-        else
-            print_status "⚠ Warning: Unable to confirm droplet rename, but request was accepted" "$YELLOW"
-        fi
-    else
-        print_status "✗ Failed to rename droplet via API" "$RED"
-        if [[ "$CLEANUP_MODE" == true ]]; then
-            print_status "Continuing with local hostname cleanup..." "$YELLOW"
-        else
-            exit 1
-        fi
-    fi
+print_status "Renaming droplet to: $TARGET_NAME" "$YELLOW"
+if rename_droplet "$TARGET_NAME"; then
+    verify_droplet_rename "$TARGET_NAME" || print_status "⚠ Could not verify rename yet" "$YELLOW"
+else
+    exit 1
 fi
 
-# Final status message
-if [[ "$CLEANUP_MODE" == true ]]; then
-    print_status "Cleanup completed successfully!" "$GREEN"
-    print_status "Droplet and local hostname reverted to: $TARGET_NAME" "$GREEN"
-    print_status "Backup files preserved at: /etc/hostname.bak and /etc/hosts.bak" "$YELLOW"
-else
-    print_status "Operation completed successfully!" "$GREEN"
-    print_status "Local hostname has been set to: $(hostname)" "$GREEN"
-    print_status "Droplet PTR record should now point to: $TARGET_NAME" "$GREEN"
-    print_status "Note: DNS changes may take additional time to propagate" "$YELLOW"
-fi
+print_status "Done! PTR record should now point to: $TARGET_NAME" "$GREEN"
