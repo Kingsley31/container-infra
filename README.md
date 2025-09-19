@@ -54,3 +54,5 @@ This is a framework for running containerized workloads with zero downtime using
 3. sudo DO_API_TOKEN="$DO_API_TOKEN" ./digital-ocean/configure-droplet-ptr.sh 517606015 mail.energymixtech.com
 
 4. sudo DO_API_TOKEN="$DO_API_TOKEN" ./digital-ocean/create_mail_dns.sh energymixtech.com 188.166.46.167
+
+5. sudo DO_API_TOKEN="$DO_API_TOKEN" ./mail-server-scripts/dkim-rspamd-config.sh energymixtech.com 188.166.46.167 /path/to/container-infra/digital-ocean/create_dkim_record.sh
