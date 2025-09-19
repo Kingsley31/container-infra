@@ -49,31 +49,51 @@ echo "⚙️ Updating local hostname to $FQDN..."
 hostnamectl set-hostname "$FQDN"
 echo "✓ Hostname set"
 
-echo "🔎 Checking if $IP is a floating IP..."
-FLOATING_JSON=$(curl -s -H "Authorization: Bearer $DO_API_TOKEN" \
-  "$API/floating_ips/$IP")
 
-if echo "$FLOATING_JSON" | jq -e '.floating_ip' >/dev/null 2>&1; then
-  echo "🌐 $IP is a floating IP, setting PTR record..."
-  RESPONSE=$(curl -s -w "\nHTTP_STATUS:%{http_code}" -X PUT \
-    -H "Authorization: Bearer $DO_API_TOKEN" \
-    -H "Content-Type: application/json" \
-    -d "{\"ptr_record\":\"$FQDN\"}" \
-    "$API/floating_ips/$IP/ptr")
 
-  HTTP_STATUS=$(echo "$RESPONSE" | sed -n 's/^HTTP_STATUS://p')
-  BODY=$(echo "$RESPONSE" | sed '/^HTTP_STATUS:/d')
+# -------------------------------------------------
+# 3. Issue rename action
+# -------------------------------------------------
+RESPONSE=$(curl -s -X POST \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $DO_API_TOKEN" \
+  -d "{\"type\":\"rename\",\"name\":\"$FQDN\"}" \
+  "https://api.digitalocean.com/v2/droplets/${$DROPLET_ID}/actions")
 
-  if [ "$HTTP_STATUS" -ge 200 ] && [ "$HTTP_STATUS" -lt 300 ]; then
-    echo "✅ PTR record set successfully: $IP -> $FQDN"
-  else
-    echo "❌ Failed to set PTR record"
-    echo "Status: $HTTP_STATUS"
-    echo "Body: $BODY"
-    exit 1
-  fi
-else
-  echo "⚠️ $IP is NOT a floating IP."
-  echo "DigitalOcean only supports PTR records on floating IPs."
-  echo "You may need to assign a floating IP to this droplet first."
+
+# Extract the action ID
+ACTION_ID=$(echo "$RESPONSE" | grep -o '"id":[0-9]*' | cut -d: -f2)
+
+if [[ -z "$ACTION_ID" ]]; then
+  echo "Failed to initiate rename action. Response:"
+  echo "$RESPONSE"
+  exit 1
 fi
+
+echo "Rename action started (ID: $ACTION_ID). Waiting for completion..."
+
+# -------------------------------------------------
+# 4. Poll action status
+# -------------------------------------------------
+while true; do
+  STATUS=$(curl -s -H "Authorization: Bearer $DO_API_TOKEN" \
+    "https://api.digitalocean.com/v2/actions/${ACTION_ID}" |
+    grep -o '"status":"[^"]*' | cut -d\" -f4)
+
+  case "$STATUS" in
+    completed)
+      echo "Droplet $DROPLET_ID successfully renamed to $FQDN."
+      break
+      ;;
+    errored)
+      echo "Rename action errored. Check the DigitalOcean dashboard for details."
+      exit 1
+      ;;
+    *)
+      echo "Current status: $STATUS – checking again in 5 seconds..."
+      sleep 5
+      ;;
+  esac
+done
+
+
