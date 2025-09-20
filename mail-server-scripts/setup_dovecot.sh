@@ -101,7 +101,7 @@ EOF
 cat > "$DOVECOT_CONF_DIR/dovecot-sql.conf.ext" <<EOF
 driver = pgsql
 connect = host=$DB_HOST port=$DB_PORT dbname=$DB_NAME user=$DB_USER password=$DB_PASS
-default_pass_scheme = SHA512-CRYPT
+default_pass_scheme = BLF-CRYPT
 password_query = SELECT email as user, password FROM users WHERE email='%u';
 EOF
 
