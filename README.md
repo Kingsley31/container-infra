@@ -55,4 +55,16 @@ This is a framework for running containerized workloads with zero downtime using
 
 4. sudo DO_API_TOKEN="$DO_API_TOKEN" ./digital-ocean/create_mail_dns.sh energymixtech.com 188.166.46.167
 
-5. sudo DO_API_TOKEN="$DO_API_TOKEN" ./mail-server-scripts/dkim-rspamd-config.sh energymixtech.com 188.166.46.167 /path/to/container-infra/digital-ocean/create_dkim_record.sh
+5. sudo DO_API_TOKEN="$DO_API_TOKEN" ./mail-server-scripts/dkim-rspamd-config.sh energymixtech.com 188.166.46.167 /home/energymixtech/container-infra/digital-ocean/create_dkim_record.sh
+
+-------------------------------------------------------------------------------
+
+1. touch /home/energymixtech/.maildb.env
+
+2. nano /home/energymixtech/.maildb.env [paste your environment variables(see ./mail-server-scripts/.example.maildb.env) and save and exit]
+
+3. sudo ./mail-server-scripts/setup_postfix_schema.sh /home/energymixtech/.maildb.env
+4. sudo ./mail-server-scripts/setup_postfix.sh energymixtech.com /home/energymixtech/.maildb.env
+5. sudo ./mail-server-scripts/setup_dovecot.sh energymixtech.com /home/energymixtech/.maildb.env
+6. sudo ./mail-server-scripts/add_mail_user.sh <admin@energymixtech.com> somepassword /home/energymixtech/.maildb.env
+7. sudo ./mail-server-scripts/setup_ufw.sh
