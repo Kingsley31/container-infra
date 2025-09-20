@@ -84,7 +84,7 @@ EOF
 cat > "$DOVECOT_CONF_DIR/conf.d/10-auth.conf" <<EOF
 disable_plaintext_auth = yes
 auth_mechanisms = plain login
-!include auth-sql.conf.ext
+!include /etc/dovecot/dovecot-sql.conf.ext
 EOF
 
 cat > "$DOVECOT_CONF_DIR/conf.d/auth-sql.conf.ext" <<EOF
