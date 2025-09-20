@@ -1,5 +1,13 @@
 #!/bin/bash
+# Add a mail user (idempotent) to Postfix + PostgreSQL
+# Usage: ./add_mail_user.sh <email> <password> <path-to-env-file>
+
 set -euo pipefail
+
+if [[ "$(id -u)" -ne 0 ]]; then
+  echo "❌ Please run this script as root (use sudo)."
+  exit 1
+fi
 
 if [ $# -ne 3 ]; then
   echo "Usage: $0 <email> <password> <path-to-env-file>"
@@ -33,14 +41,14 @@ export PGPASSWORD="$DB_PASS"
 # Check/install dependencies
 if ! command -v psql &>/dev/null; then
   echo "📦 Installing PostgreSQL client..."
-  sudo apt-get update -y
-  sudo apt-get install -y postgresql-client
+  apt-get update -y
+  apt-get install -y postgresql-client
 fi
 
 if ! command -v doveadm &>/dev/null; then
   echo "📦 Installing Dovecot tools..."
-  sudo apt-get update -y
-  sudo apt-get install -y dovecot-core dovecot-pop3d dovecot-imapd
+  apt-get update -y
+  apt-get install -y dovecot-core dovecot-pop3d dovecot-imapd
 fi
 
 # Hash password with Dovecot
@@ -51,20 +59,27 @@ DOMAIN=$(echo "$EMAIL" | awk -F@ '{print $2}')
 LOCALPART=$(echo "$EMAIL" | awk -F@ '{print $1}')
 MAILDIR="$DOMAIN/$LOCALPART/"
 
-# Insert domain and get ID
-DOMAIN_ID=$(psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -At -c \
-  "INSERT INTO domains (name) VALUES ('$DOMAIN')
-   ON CONFLICT (name) DO UPDATE SET name = EXCLUDED.name
+# Insert domain if not exists and get ID
+DOMAIN_ID=$(psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -t -A -c \
+  "INSERT INTO domains (name)
+   VALUES ('$DOMAIN')
+   ON CONFLICT (name) DO NOTHING
    RETURNING id;")
 
-# Insert user (idempotent: skip if exists)
+# If domain already existed, fetch its ID
+if [[ -z "$DOMAIN_ID" ]]; then
+  DOMAIN_ID=$(psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -t -A -c \
+    "SELECT id FROM domains WHERE name='$DOMAIN';")
+fi
+
+# Insert user (idempotent)
 psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -v ON_ERROR_STOP=1 <<SQL
 INSERT INTO users (email, password, domain_id, maildir)
 VALUES ('$EMAIL', '$HASHED_PASS', $DOMAIN_ID, '$MAILDIR')
 ON CONFLICT (email) DO NOTHING;
 SQL
 
-# Insert alias (self-alias at least, idempotent)
+# Insert self-alias (idempotent)
 psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -v ON_ERROR_STOP=1 <<SQL
 INSERT INTO aliases (source, destination, domain_id)
 VALUES ('$EMAIL', '$EMAIL', $DOMAIN_ID)
