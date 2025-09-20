@@ -17,7 +17,7 @@ if [ $# -ne 3 ]; then
 fi
 
 EMAIL="$1"
-PASSWORD="$2"
+PASSWORD="$2"  # Don't quote here - let the caller handle quoting
 ENV_FILE="$3"
 
 if [ ! -f "$ENV_FILE" ]; then
@@ -53,7 +53,7 @@ if ! command -v doveadm &>/dev/null; then
   apt-get install -y dovecot-core dovecot-pop3d dovecot-imapd
 fi
 
-# Hash password with Dovecot
+# Hash password with Dovecot - use single quotes to prevent expansion
 HASHED_PASS=$(doveadm pw -s BLF-CRYPT -p "$PASSWORD")
 
 # Extract domain and local part
@@ -69,9 +69,9 @@ psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -c \
 
 # Fetch domain ID (plain output)
 DOMAIN_ID=$(psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -t -A \
-  "SELECT id FROM domains WHERE name='$DOMAIN';")
+  -c "SELECT id FROM domains WHERE name='$DOMAIN';")
 
-# Insert user (idempotent)
+# Insert user (idempotent) - use proper quoting for SQL
 psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -v ON_ERROR_STOP=1 <<SQL
 INSERT INTO users (email, password, domain_id, maildir)
 VALUES ('$EMAIL', '$HASHED_PASS', $DOMAIN_ID, '$MAILDIR')
