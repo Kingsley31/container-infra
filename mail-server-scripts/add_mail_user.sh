@@ -4,11 +4,13 @@
 
 set -euo pipefail
 
+# Require root
 if [[ "$(id -u)" -ne 0 ]]; then
   echo "❌ Please run this script as root (use sudo)."
   exit 1
 fi
 
+# Check arguments
 if [ $# -ne 3 ]; then
   echo "Usage: $0 <email> <password> <path-to-env-file>"
   exit 1
@@ -28,7 +30,7 @@ set -a
 source "$ENV_FILE"
 set +a
 
-# Ensure required vars exist
+# Validate required variables
 : "${DB_NAME:?Missing DB_NAME in $ENV_FILE}"
 : "${DB_USER:?Missing DB_USER in $ENV_FILE}"
 : "${DB_PASS:?Missing DB_PASS in $ENV_FILE}"
@@ -55,8 +57,8 @@ fi
 HASHED_PASS=$(doveadm pw -s BLF-CRYPT -p "$PASSWORD")
 
 # Extract domain and local part
-DOMAIN=$(echo "$EMAIL" | awk -F@ '{print $2}')
-LOCALPART=$(echo "$EMAIL" | awk -F@ '{print $1}')
+DOMAIN="${EMAIL#*@}"
+LOCALPART="${EMAIL%@*}"
 MAILDIR="$DOMAIN/$LOCALPART/"
 
 # Ensure domain exists
@@ -65,22 +67,22 @@ psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -c \
  VALUES ('$DOMAIN')
  ON CONFLICT (name) DO NOTHING;"
 
-# Get domain ID
+# Fetch domain ID (plain output)
 DOMAIN_ID=$(psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -t -A \
   "SELECT id FROM domains WHERE name='$DOMAIN';")
 
-# Ensure users table insert is idempotent
+# Insert user (idempotent)
 psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -v ON_ERROR_STOP=1 <<SQL
 INSERT INTO users (email, password, domain_id, maildir)
 VALUES ('$EMAIL', '$HASHED_PASS', $DOMAIN_ID, '$MAILDIR')
 ON CONFLICT (email) DO NOTHING;
 SQL
 
-# Ensure self-alias exists
+# Insert self-alias (idempotent)
 psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -v ON_ERROR_STOP=1 <<SQL
 INSERT INTO aliases (source, destination, domain_id)
 VALUES ('$EMAIL', '$EMAIL', $DOMAIN_ID)
 ON CONFLICT (source) DO NOTHING;
 SQL
 
-echo "✅ Mail user $EMAIL created (domain_id=$DOMAIN_ID, maildir=$MAILDIR)"
+echo "✅ Mail user $EMAIL created successfully (domain_id=$DOMAIN_ID, maildir=$MAILDIR)"
