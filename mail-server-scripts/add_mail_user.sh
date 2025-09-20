@@ -59,27 +59,24 @@ DOMAIN=$(echo "$EMAIL" | awk -F@ '{print $2}')
 LOCALPART=$(echo "$EMAIL" | awk -F@ '{print $1}')
 MAILDIR="$DOMAIN/$LOCALPART/"
 
-# Insert domain if not exists and get ID
-DOMAIN_ID=$(psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -t -A -c \
-  "INSERT INTO domains (name)
-   VALUES ('$DOMAIN')
-   ON CONFLICT (name) DO NOTHING
-   RETURNING id;")
+# Ensure domain exists
+psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -c \
+"INSERT INTO domains (name)
+ VALUES ('$DOMAIN')
+ ON CONFLICT (name) DO NOTHING;"
 
-# If domain already existed, fetch its ID
-if [[ -z "$DOMAIN_ID" ]]; then
-  DOMAIN_ID=$(psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -t -A -c \
-    "SELECT id FROM domains WHERE name='$DOMAIN';")
-fi
+# Get domain ID
+DOMAIN_ID=$(psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -t -A \
+  "SELECT id FROM domains WHERE name='$DOMAIN';")
 
-# Insert user (idempotent)
+# Ensure users table insert is idempotent
 psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -v ON_ERROR_STOP=1 <<SQL
 INSERT INTO users (email, password, domain_id, maildir)
 VALUES ('$EMAIL', '$HASHED_PASS', $DOMAIN_ID, '$MAILDIR')
 ON CONFLICT (email) DO NOTHING;
 SQL
 
-# Insert self-alias (idempotent)
+# Ensure self-alias exists
 psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -v ON_ERROR_STOP=1 <<SQL
 INSERT INTO aliases (source, destination, domain_id)
 VALUES ('$EMAIL', '$EMAIL', $DOMAIN_ID)
