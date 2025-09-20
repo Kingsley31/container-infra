@@ -40,6 +40,13 @@ if [[ "$(id -u)" -ne 0 ]]; then
 fi
 
 # -------------------------
+# Clean up any existing sockets that might cause conflicts
+# -------------------------
+echo "🧹 Cleaning up any existing Dovecot sockets..."
+rm -f /var/run/dovecot/* 2>/dev/null || true
+rm -f /var/spool/postfix/private/auth 2>/dev/null || true
+
+# -------------------------
 # Install Dovecot if missing
 # -------------------------
 if ! command -v dovecot >/dev/null 2>&1; then
@@ -62,14 +69,28 @@ fi
 DOVECOT_CONF_DIR="/etc/dovecot"
 mkdir -p "$DOVECOT_CONF_DIR/conf.d"
 
-# SSL config
+# SSL config - check if certs exist, if not use self-signed
 SSL_CERT="/etc/container-infra/nginx/letsencrypt/live/${DOMAIN}/fullchain.pem"
 SSL_KEY="/etc/container-infra/nginx/letsencrypt/live/${DOMAIN}/privkey.pem"
+
+if [[ ! -f "$SSL_CERT" || ! -f "$SSL_KEY" ]]; then
+  echo "⚠️  SSL certificates not found, using self-signed"
+  SSL_CERT="/etc/ssl/certs/dovecot.pem"
+  SSL_KEY="/etc/ssl/private/dovecot.key"
+  
+  # Generate self-signed cert if needed
+  if [[ ! -f "$SSL_CERT" ]]; then
+    mkdir -p /etc/ssl/certs /etc/ssl/private
+    openssl req -new -x509 -nodes -out "$SSL_CERT" -keyout "$SSL_KEY" \
+      -subj "/CN=$DOMAIN" -days 365 2>/dev/null
+  fi
+fi
 
 cat > "$DOVECOT_CONF_DIR/conf.d/10-ssl.conf" <<EOF
 ssl = required
 ssl_cert = <$SSL_CERT
 ssl_key = <$SSL_KEY
+ssl_min_protocol = TLSv1.2
 EOF
 
 # Mailbox location
@@ -105,7 +126,7 @@ default_pass_scheme = BLF-CRYPT
 password_query = SELECT email as user, password FROM users WHERE email='%u';
 EOF
 
-# Postfix SASL integration
+# Postfix SASL integration - FIXED: Only one auth socket for Postfix
 cat > "$DOVECOT_CONF_DIR/conf.d/10-master.conf" <<EOF
 service auth {
   unix_listener /var/spool/postfix/private/auth {
@@ -113,11 +134,14 @@ service auth {
     user = postfix
     group = postfix
   }
-  unix_listener /var/run/dovecot/auth-userdb {
-    mode = 0600
-    user = root
-    group = root
-  }
+}
+
+service anvil {
+  chroot =
+}
+
+service stats {
+  chroot =
 }
 EOF
 
@@ -126,16 +150,49 @@ EOF
 # -------------------------
 if ! id -u vmail >/dev/null 2>&1; then
   echo "👤 Creating vmail user..."
-  useradd -r -u 5000 vmail
+  useradd -r -u 5000 -d /var/mail vmail
 fi
 
 mkdir -p /var/mail/vhosts
 chown -R vmail:vmail /var/mail
 
 # -------------------------
+# Fix permissions and create necessary directories
+# -------------------------
+mkdir -p /var/run/dovecot
+chown -R dovecot:dovecot /var/run/dovecot
+
+# -------------------------
+# Validate configuration
+# -------------------------
+echo "🔍 Validating Dovecot configuration..."
+if ! dovecot -n 2>&1; then
+  echo "❌ Dovecot configuration validation failed"
+  exit 1
+fi
+
+# -------------------------
 # Restart services
 # -------------------------
+echo "🔄 Restarting Dovecot..."
 systemctl enable dovecot
-systemctl restart dovecot
+
+# Stop Dovecot if it's running (even if failed)
+systemctl stop dovecot 2>/dev/null || true
+
+# Remove any stale sockets
+rm -f /var/run/dovecot/* 2>/dev/null || true
+rm -f /var/spool/postfix/private/auth 2>/dev/null || true
+
+# Start Dovecot
+if systemctl start dovecot; then
+  echo "✅ Dovecot started successfully"
+  sleep 2
+  systemctl status dovecot --no-pager -l
+else
+  echo "❌ Failed to start Dovecot"
+  journalctl -u dovecot -n 20 --no-pager
+  exit 1
+fi
 
 echo "🎉 Dovecot + SASL configured successfully for $DOMAIN"
