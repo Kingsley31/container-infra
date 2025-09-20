@@ -84,6 +84,7 @@ EOF
 cat > "$DOVECOT_CONF_DIR/conf.d/10-auth.conf" <<EOF
 disable_plaintext_auth = yes
 auth_mechanisms = plain login
+!include auth-sql.conf.ext
 EOF
 
 cat > "$DOVECOT_CONF_DIR/conf.d/auth-sql.conf.ext" <<EOF
@@ -112,10 +113,10 @@ service auth {
     user = postfix
     group = postfix
   }
-  unix_listener auth-userdb {
+  unix_listener /var/run/dovecot/auth-userdb {
     mode = 0600
-    user = vmail
-    group = vmail
+    user = root
+    group = root
   }
 }
 EOF
