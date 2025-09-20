@@ -112,6 +112,11 @@ service auth {
     user = postfix
     group = postfix
   }
+  unix_listener auth-userdb {
+    mode = 0600
+    user = vmail
+    group = vmail
+  }
 }
 EOF
 
