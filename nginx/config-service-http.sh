@@ -63,6 +63,7 @@ upstream ${SERVICE_NAME}_upstream {
 server {
     listen 80;
     server_name $DOMAIN_NAME $DOMAIN_ALIAS;
+    client_max_body_size 50M;
 
     location /.well-known/acme-challenge/ {
         root /usr/share/nginx/html;

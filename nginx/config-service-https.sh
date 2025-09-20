@@ -65,6 +65,7 @@ upstream ${SERVICE_NAME}_upstream {
 server {
     listen 80;
     server_name $DOMAIN_NAME $DOMAIN_ALIAS;
+    client_max_body_size 50M;
 
     location /.well-known/acme-challenge/ {
         root /usr/share/nginx/html;
@@ -148,6 +149,7 @@ server {
     add_header X-Frame-Options DENY;
     add_header X-Content-Type-Options nosniff;
     add_header X-XSS-Protection "1; mode=block";
+    client_max_body_size 50M;
 
     location /.well-known/acme-challenge/ {
         root /usr/share/nginx/html;

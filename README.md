@@ -68,3 +68,8 @@ This is a framework for running containerized workloads with zero downtime using
 5. sudo ./mail-server-scripts/setup_dovecot.sh energymixtech.com /home/energymixtech/.maildb.env
 6. sudo ./mail-server-scripts/add_mail_user.sh <admin@energymixtech.com> somepassword /home/energymixtech/.maildb.env
 7. sudo ./mail-server-scripts/setup_ufw.sh
+
+## Setup SMTP Relay for postfix If your provider blocked port 25
+
+1. nano /home/energymixtech/.smtprelay.env [paste your environment variables(see ./mail-server-scripts/.example.smtprelay.env) and save and exit]
+2. sudo ./mail-server-scripts/configure_postfix_relay.sh /home/energymixtech/.smtprelay.env
