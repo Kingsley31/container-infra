@@ -72,15 +72,14 @@ postconf -e "mydestination = \$myhostname, localhost.\$mydomain, localhost"
 postconf -e "relay_domains ="
 postconf -e "home_mailbox = Maildir/"
 
-# PostgreSQL integration
+# PostgreSQL integration - FIXED: Include port in hosts parameter
 PGSQL_MAPS_DIR="/etc/postfix/pgsql"
 mkdir -p "$PGSQL_MAPS_DIR"
 
 cat > "$PGSQL_MAPS_DIR/virtual_mailbox_maps.cf" <<EOF
 user = $DB_USER
 password = $DB_PASS
-hosts = $DB_HOST
-port = $DB_PORT
+hosts = $DB_HOST:$DB_PORT
 dbname = $DB_NAME
 query = SELECT maildir FROM users WHERE email='%s'
 EOF
@@ -88,8 +87,7 @@ EOF
 cat > "$PGSQL_MAPS_DIR/virtual_alias_maps.cf" <<EOF
 user = $DB_USER
 password = $DB_PASS
-hosts = $DB_HOST
-port = $DB_PORT
+hosts = $DB_HOST:$DB_PORT
 dbname = $DB_NAME
 query = SELECT destination FROM aliases WHERE source='%s'
 EOF
@@ -116,12 +114,11 @@ postconf -e "smtpd_sasl_auth_enable = yes"
 postconf -e "smtpd_sasl_security_options = noanonymous"
 postconf -e "smtpd_sasl_local_domain = \$myhostname"
 
-# Sender verification
+# Sender verification - FIXED: Include port in hosts parameter
 cat > "$PGSQL_MAPS_DIR/sender_login_maps.cf" <<EOF
 user = $DB_USER
 password = $DB_PASS
-hosts = $DB_HOST
-port = $DB_PORT
+hosts = $DB_HOST:$DB_PORT
 dbname = $DB_NAME
 query = SELECT email FROM users WHERE email='%s'
 EOF
@@ -181,7 +178,14 @@ systemctl restart postfix
 # Verify configuration
 echo "🔍 Testing Postfix configuration..."
 postfix check
-postconf -n | grep sasl
+
+# Test PostgreSQL connection
+echo "🔍 Testing PostgreSQL connection..."
+if sudo postmap -q "admin@energymixtech.com" pgsql:/etc/postfix/pgsql/virtual_mailbox_maps.cf; then
+  echo "✅ PostgreSQL connection successful"
+else
+  echo "❌ PostgreSQL connection failed"
+fi
 
 echo "🎉 Postfix setup complete for $DOMAIN with PostgreSQL + SSL + SASL Auth"
 echo "📧 Submission port 587 should now advertise authentication"
