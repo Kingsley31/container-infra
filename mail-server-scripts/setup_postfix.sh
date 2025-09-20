@@ -37,11 +37,17 @@ if [[ "$(id -u)" -ne 0 ]]; then
   exit 1
 fi
 
-# Ensure Postfix is installed
+# Ensure Postfix is installed (non-interactive install)
 if ! command -v postfix >/dev/null 2>&1; then
   echo "📦 Installing Postfix..."
   if command -v apt >/dev/null 2>&1; then
-    apt update && apt install -y postfix postfix-pgsql
+    apt update
+
+    # Preseed debconf answers to avoid interactive prompts
+    echo "postfix postfix/main_mailer_type string 'Internet Site'" | debconf-set-selections
+    echo "postfix postfix/mailname string $DOMAIN" | debconf-set-selections
+
+    DEBIAN_FRONTEND=noninteractive apt install -y postfix postfix-pgsql
   elif command -v dnf >/dev/null 2>&1; then
     dnf install -y postfix postfix-pgsql
   else
