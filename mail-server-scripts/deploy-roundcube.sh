@@ -37,7 +37,7 @@ mkdir -p "$VOLUME_BASE/var/roundcube/config"
 mkdir -p "$VOLUME_BASE/tmp/roundcube-temp"
 
 # Set Roundcube version (change if needed, e.g. 1.6.7)
-ROUNDCUBE_VERSION="1.6.7"
+ROUNDCUBE_VERSION="latest"
 
 # Run Roundcube container
 nerdctl run -d \
