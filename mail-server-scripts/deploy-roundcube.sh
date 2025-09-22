@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-
 # Require root
 if [[ "$(id -u)" -ne 0 ]]; then
   echo "❌ Please run this script as root (use sudo)."
@@ -35,18 +34,36 @@ VOLUME_BASE="/etc/container-infra"
 mkdir -p "$VOLUME_BASE/var/www/html"
 mkdir -p "$VOLUME_BASE/var/roundcube/config"
 mkdir -p "$VOLUME_BASE/tmp/roundcube-temp"
+mkdir -p "$VOLUME_BASE/apache"
 
-# Set Roundcube version (change if needed, e.g. 1.6.7)
+# Create a custom Apache ports.conf to force 8080
+cat > "$VOLUME_BASE/apache/ports.conf" <<'EOF'
+Listen 8080
+<IfModule ssl_module>
+    Listen 8443
+</IfModule>
+<IfModule mod_gnutls.c>
+    Listen 8443
+</IfModule>
+EOF
+
+# Set Roundcube version (change if needed, e.g. 1.6.11)
 ROUNDCUBE_VERSION="latest"
 
-# Run Roundcube container
+# Stop and remove existing container if it exists
+if nerdctl ps -a --format '{{.Names}}' | grep -q '^roundcube$'; then
+  echo "Removing existing roundcube container..."
+  nerdctl rm -f roundcube
+fi
+
+# Run Roundcube container with Apache override
 nerdctl run -d \
   --name roundcube \
   --network host \
   --restart always \
-   -p 8080:8080 \
   --env-file "$ENV_FILE" \
   -v "$VOLUME_BASE/var/www/html:/var/www/html" \
   -v "$VOLUME_BASE/var/roundcube/config:/var/roundcube/config" \
   -v "$VOLUME_BASE/tmp/roundcube-temp:/tmp/roundcube-temp" \
+  -v "$VOLUME_BASE/apache/ports.conf:/etc/apache2/ports.conf:ro" \
   roundcube/roundcubemail:"$ROUNDCUBE_VERSION"
