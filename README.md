@@ -61,7 +61,7 @@ This is a framework for running containerized workloads with zero downtime using
 
 1. touch /home/energymixtech/.maildb.env
 
-2. nano /home/energymixtech/.maildb.env [paste your environment variables(see ./mail-server-scripts/.example.maildb.env) and save and exit]
+2. sudo nano /home/energymixtech/.maildb.env [paste your environment variables(see ./mail-server-scripts/.example.maildb.env) and save and exit]
 
 3. sudo ./mail-server-scripts/setup_postfix_schema.sh /home/energymixtech/.maildb.env
 4. sudo ./mail-server-scripts/setup_postfix.sh energymixtech.com /home/energymixtech/.maildb.env
@@ -71,5 +71,11 @@ This is a framework for running containerized workloads with zero downtime using
 
 ## Setup SMTP Relay for postfix If your provider blocked port 25
 
-1. nano /home/energymixtech/.smtprelay.env [paste your environment variables(see ./mail-server-scripts/.example.smtprelay.env) and save and exit]
+1. sudo nano /home/energymixtech/.smtprelay.env [paste your environment variables(see ./mail-server-scripts/.example.smtprelay.env) and save and exit]
 2. sudo ./mail-server-scripts/configure_postfix_relay.sh /home/energymixtech/.smtprelay.env
+
+## Setup Roundcube
+
+1. sudo nano /home/energymixtech/.roundcube.env [paste your environment variables(see ./mail-server-scripts/.example.roundcube.env) and save and exit]
+2. sudo ./mail-server-scripts/deploy-roundcube.sh /homee/energymixtech/.roundcube.env
+3. sudo ./nginx/config-service-https.sh roundcube 9000 roundcube webmail.energymixtech.com

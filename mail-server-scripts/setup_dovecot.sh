@@ -95,7 +95,7 @@ EOF
 
 # Mailbox location
 cat > "$DOVECOT_CONF_DIR/conf.d/10-mail.conf" <<EOF
-mail_location = maildir:/var/mail/vhosts/%d/%n
+mail_location = maildir:/var/mail/vhosts/%d/%n/Maildir
 namespace inbox {
   inbox = yes
 }

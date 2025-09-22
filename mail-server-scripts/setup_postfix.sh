@@ -76,12 +76,20 @@ postconf -e "home_mailbox = Maildir/"
 PGSQL_MAPS_DIR="/etc/postfix/pgsql"
 mkdir -p "$PGSQL_MAPS_DIR"
 
+cat > "$PGSQL_MAPS_DIR/virtual_domains.cf" <<EOF
+user = $DB_USER
+password = $DB_PASS
+hosts = $DB_HOST:$DB_PORT
+dbname = $DB_NAME
+query = SELECT DISTINCT name FROM domains WHERE name='%s'
+EOF
+
 cat > "$PGSQL_MAPS_DIR/virtual_mailbox_maps.cf" <<EOF
 user = $DB_USER
 password = $DB_PASS
 hosts = $DB_HOST:$DB_PORT
 dbname = $DB_NAME
-query = SELECT maildir FROM users WHERE email='%s'
+query = SELECT maildir || 'Maildir/' FROM users WHERE email='%s'
 EOF
 
 cat > "$PGSQL_MAPS_DIR/virtual_alias_maps.cf" <<EOF
@@ -92,9 +100,14 @@ dbname = $DB_NAME
 query = SELECT destination FROM aliases WHERE source='%s'
 EOF
 
-postconf -e "virtual_mailbox_domains = pgsql:$PGSQL_MAPS_DIR/virtual_mailbox_maps.cf"
+postconf -e "virtual_mailbox_domains = pgsql:$PGSQL_MAPS_DIR/virtual_domains.cf"
 postconf -e "virtual_mailbox_maps = pgsql:$PGSQL_MAPS_DIR/virtual_mailbox_maps.cf"
 postconf -e "virtual_alias_maps = pgsql:$PGSQL_MAPS_DIR/virtual_alias_maps.cf"
+postconf -e "virtual_transport = lmtp:unix:private/dovecot-lmtp"
+postconf -e "virtual_mailbox_base = /var/mail/vhosts"
+postconf -e "virtual_uid_maps = static:5000"
+postconf -e "virtual_gid_maps = static:5000"
+postconf -e "virtual_minimum_uid = 5000"
 
 # SSL (paths must exist already, script doesn't generate them)
 VOLUME_PATH="/etc/container-infra/nginx"
