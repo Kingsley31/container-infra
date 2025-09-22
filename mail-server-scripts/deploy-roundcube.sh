@@ -42,7 +42,6 @@ ROUNDCUBE_VERSION="latest"
 # Run Roundcube container
 nerdctl run -d \
   --name roundcube \
-  --network host \
   --restart always \
    -p 8080:80 \
   --env-file "$ENV_FILE" \
