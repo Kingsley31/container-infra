@@ -42,8 +42,9 @@ ROUNDCUBE_VERSION="latest"
 # Run Roundcube container
 nerdctl run -d \
   --name roundcube \
+  --network host \
   --restart always \
-   -p 8080:80 \
+   -p 8080:8080 \
   --env-file "$ENV_FILE" \
   -v "$VOLUME_BASE/var/www/html:/var/www/html" \
   -v "$VOLUME_BASE/var/roundcube/config:/var/roundcube/config" \
