@@ -44,8 +44,8 @@ nerdctl run -d \
   --name roundcube \
   --network host \
   --restart always \
+   -p 3004:80 \
   --env-file "$ENV_FILE" \
-  -p 9000:80 \
   -v "$VOLUME_BASE/var/www/html:/var/www/html" \
   -v "$VOLUME_BASE/var/roundcube/config:/var/roundcube/config" \
   -v "$VOLUME_BASE/tmp/roundcube-temp:/tmp/roundcube-temp" \
