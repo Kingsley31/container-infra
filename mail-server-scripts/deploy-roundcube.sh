@@ -83,7 +83,7 @@ FROM roundcube/roundcubemail:latest
 # Install build dependencies and enable IMAP
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
-        uw-imap-dev \
+        libc-client2007e-dev \
         libkrb5-dev \
         libssl-dev \
         pkg-config \
