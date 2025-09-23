@@ -79,3 +79,4 @@ This is a framework for running containerized workloads with zero downtime using
 1. sudo nano /home/energymixtech/.roundcube.env [paste your environment variables(see ./mail-server-scripts/.example.roundcube.env) and save and exit]
 2. sudo ./mail-server-scripts/deploy-roundcube.sh /home/energymixtech/.roundcube.env
 3. sudo ./nginx/config-service-https.sh roundcube 9000 roundcube webmail.energymixtech.com
+4. sudo ./mail-server-scripts/deploy_rainloop.sh
