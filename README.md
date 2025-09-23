@@ -74,9 +74,16 @@ This is a framework for running containerized workloads with zero downtime using
 1. sudo nano /home/energymixtech/.smtprelay.env [paste your environment variables(see ./mail-server-scripts/.example.smtprelay.env) and save and exit]
 2. sudo ./mail-server-scripts/configure_postfix_relay.sh /home/energymixtech/.smtprelay.env
 
-## Setup Roundcube
+## Setup RainLoop For Webmail
 
-1. sudo nano /home/energymixtech/.roundcube.env [paste your environment variables(see ./mail-server-scripts/.example.roundcube.env) and save and exit]
-2. sudo ./mail-server-scripts/deploy-roundcube.sh /home/energymixtech/.roundcube.env
-3. sudo ./nginx/config-service-https.sh roundcube 9000 roundcube webmail.energymixtech.com
-4. sudo ./mail-server-scripts/deploy_rainloop.sh
+1. sudo ./mail-server-scripts/deploy_rainloop.sh
+2. sudo ./nginx/config-service-https.sh roundcube 8888 roundcube webmail.energymixtech.com
+3. sudo ./mail-server-scripts/deploy_rainloop.sh
+
+## Login To Rainloop Admin Cpanel And Your Domain
+
+Access RainLoop's admin panel (usually https://webmail.energymixtech.com/?admin) and configure the SSL settings:
+
+Admin Login:
+Username: admin
+Password: 12345 (default) Note: change this to a strong password
