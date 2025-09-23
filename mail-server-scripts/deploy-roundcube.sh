@@ -80,12 +80,22 @@ TMP_DIR="$(mktemp -d)"
 cat > "${TMP_DIR}/Dockerfile" <<'EOF'
 FROM roundcube/roundcubemail:latest
 
-# Install IMAP extension (handle both Debian packages and docker-php-ext-install)
+# Install build dependencies and enable IMAP
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends php-imap && \
-    if command -v docker-php-ext-install >/dev/null 2>&1; then \
-        docker-php-ext-install imap && docker-php-ext-enable imap; \
+    apt-get install -y --no-install-recommends \
+        libc-client2007e-dev \
+        libkrb5-dev \
+        libssl-dev \
+        pkg-config \
+        gcc \
+        make \
+        autoconf && \
+    if command -v docker-php-ext-configure >/dev/null 2>&1; then \
+        docker-php-ext-configure imap --with-kerberos --with-imap-ssl && \
+        docker-php-ext-install imap && \
+        docker-php-ext-enable imap; \
     fi && \
+    apt-get purge -y --auto-remove gcc make autoconf pkg-config && \
     rm -rf /var/lib/apt/lists/*
 EOF
 
