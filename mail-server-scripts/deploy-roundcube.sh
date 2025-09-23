@@ -66,4 +66,4 @@ nerdctl run -d \
   -v "$VOLUME_BASE/var/roundcube/config:/var/roundcube/config" \
   -v "$VOLUME_BASE/tmp/roundcube-temp:/tmp/roundcube-temp" \
   -v "$VOLUME_BASE/apache/ports.conf:/etc/apache2/ports.conf:ro" \
-  roundcube/roundcubemail:"$ROUNDCUBE_VERSION"
+  bitnami/roundcube:"$ROUNDCUBE_VERSION"

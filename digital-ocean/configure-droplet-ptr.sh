@@ -46,7 +46,7 @@ echo "   Region: $REGION"
 echo "   Public IPv4: $IP"
 
 echo "⚙️ Updating local hostname to $FQDN..."
-hostnamectl set-hostname "$FQDN"
+echo "$IP  $FQDN" | sudo tee -a /etc/hosts
 echo "✓ Hostname set"
 
 # -------------------------------------------------
