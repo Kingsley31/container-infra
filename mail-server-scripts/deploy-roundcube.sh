@@ -80,22 +80,15 @@ TMP_DIR="$(mktemp -d)"
 cat > "${TMP_DIR}/Dockerfile" <<'EOF'
 FROM roundcube/roundcubemail:latest
 
-# Install build dependencies and enable IMAP
+# Install IMAP dependencies
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
-        libc-client2007e-dev \
+        libc-client-dev \
         libkrb5-dev \
-        libssl-dev \
-        pkg-config \
-        gcc \
-        make \
-        autoconf && \
-    if command -v docker-php-ext-configure >/dev/null 2>&1; then \
-        docker-php-ext-configure imap --with-kerberos --with-imap-ssl && \
-        docker-php-ext-install imap && \
-        docker-php-ext-enable imap; \
-    fi && \
-    apt-get purge -y --auto-remove gcc make autoconf pkg-config && \
+        libssl-dev && \
+    docker-php-ext-configure imap --with-kerberos --with-imap-ssl && \
+    docker-php-ext-install imap && \
+    apt-get purge -y --auto-remove && \
     rm -rf /var/lib/apt/lists/*
 EOF
 
