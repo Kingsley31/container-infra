@@ -27,6 +27,24 @@ if ! command -v nerdctl >/dev/null 2>&1; then
   exit 1
 fi
 
+# Ensure buildctl is installed
+if ! command -v buildctl >/dev/null 2>&1; then
+  echo "Error: buildctl not found. Please install moby/buildkit first."
+  exit 1
+fi
+
+# Ensure buildkitd is running
+if ! pgrep -x "buildkitd" >/dev/null; then
+  echo "⚡ buildkitd is not running. Starting it now..."
+  nohup buildkitd --group nerdctl >/var/log/buildkitd.log 2>&1 &
+  sleep 2
+  if ! pgrep -x "buildkitd" >/dev/null; then
+    echo "❌ Failed to start buildkitd. Check /var/log/buildkitd.log"
+    exit 1
+  fi
+  echo "✅ buildkitd started."
+fi
+
 # Define base volume path
 VOLUME_BASE="/etc/container-infra"
 
@@ -67,11 +85,12 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/*
 EOF
 
-echo "Building custom Roundcube image: ${CUSTOM_IMAGE}"
+echo "🔨 Building custom Roundcube image: ${CUSTOM_IMAGE}"
 nerdctl build -t "${CUSTOM_IMAGE}" "${TMP_DIR}"
 rm -rf "${TMP_DIR}"
 
 # Run Roundcube container with Apache override
+echo "🚀 Starting Roundcube container..."
 nerdctl run -d \
   --name roundcube \
   --network host \
