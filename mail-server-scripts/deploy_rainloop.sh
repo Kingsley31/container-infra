@@ -29,7 +29,8 @@ fi
 echo "🚀 Starting Rainloop container..."
 sudo nerdctl run -d \
   --name roundcube \
-  -p 127.0.0.1:8080:80 \
+  --network host \
+  -p 8080:8888 \
   -v "$VOLUME_BASE/rainloop/data:/rainloop/data" \
   --restart unless-stopped \
   hardware/rainloop:latest
