@@ -82,7 +82,7 @@ This is a framework for running containerized workloads with zero downtime using
 
 ## Login To Rainloop Admin Cpanel And Your Domain
 
-Access RainLoop's admin panel (usually https://webmail.energymixtech.com/?admin) and configure the SSL settings:
+Access RainLoop's admin panel (usually <https://webmail.energymixtech.com/?admin>) and configure the SSL settings:
 
 Admin Login:
 Username: admin
