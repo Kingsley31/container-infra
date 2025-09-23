@@ -27,23 +27,8 @@ if ! command -v nerdctl >/dev/null 2>&1; then
   exit 1
 fi
 
-# Ensure buildctl is installed
-if ! command -v buildctl >/dev/null 2>&1; then
-  echo "Error: buildctl not found. Please install moby/buildkit first."
-  exit 1
-fi
 
-# Ensure buildkitd is running
-if ! pgrep -x "buildkitd" >/dev/null; then
-  echo "⚡ buildkitd is not running. Starting it now..."
-  nohup buildkitd --group nerdctl >/var/log/buildkitd.log 2>&1 &
-  sleep 2
-  if ! pgrep -x "buildkitd" >/dev/null; then
-    echo "❌ Failed to start buildkitd. Check /var/log/buildkitd.log"
-    exit 1
-  fi
-  echo "✅ buildkitd started."
-fi
+
 
 # Define base volume path
 VOLUME_BASE="/etc/container-infra"
@@ -66,35 +51,14 @@ Listen 8080
 EOF
 
 # Roundcube version
-ROUNDCUBE_VERSION="latest"
-CUSTOM_IMAGE="my-roundcube:${ROUNDCUBE_VERSION}"
+ROUNDCUBE_VERSION="1.6.11-apache"
+CUSTOM_IMAGE="roundcube/roundcubemail:${ROUNDCUBE_VERSION}"
 
 # Stop and remove existing container if it exists
 if nerdctl ps -a --format '{{.Names}}' | grep -q '^roundcube$'; then
   echo "Removing existing roundcube container..."
   nerdctl rm -f roundcube
 fi
-
-# Build custom Roundcube image with php-imap enabled
-TMP_DIR="$(mktemp -d)"
-cat > "${TMP_DIR}/Dockerfile" <<'EOF'
-FROM roundcube/roundcubemail:latest
-
-# Install IMAP dependencies
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends \
-        libc-client-dev \
-        libkrb5-dev \
-        libssl-dev && \
-    docker-php-ext-configure imap --with-kerberos --with-imap-ssl && \
-    docker-php-ext-install imap && \
-    apt-get purge -y --auto-remove && \
-    rm -rf /var/lib/apt/lists/*
-EOF
-
-echo "🔨 Building custom Roundcube image: ${CUSTOM_IMAGE}"
-nerdctl build -t "${CUSTOM_IMAGE}" "${TMP_DIR}"
-rm -rf "${TMP_DIR}"
 
 # Run Roundcube container with Apache override
 echo "🚀 Starting Roundcube container..."
