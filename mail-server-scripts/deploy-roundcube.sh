@@ -77,11 +77,15 @@ fi
 
 # Build custom Roundcube image with php-imap enabled
 TMP_DIR="$(mktemp -d)"
-cat > "${TMP_DIR}/Dockerfile" <<EOF
-FROM roundcube/roundcubemail:${ROUNDCUBE_VERSION}
+cat > "${TMP_DIR}/Dockerfile" <<'EOF'
+FROM roundcube/roundcubemail:latest
+
+# Install IMAP extension (handle both Debian packages and docker-php-ext-install)
 RUN apt-get update && \
-    apt-get install -y php8.2-imap && \
-    docker-php-ext-enable imap && \
+    apt-get install -y --no-install-recommends php-imap && \
+    if command -v docker-php-ext-install >/dev/null 2>&1; then \
+        docker-php-ext-install imap && docker-php-ext-enable imap; \
+    fi && \
     rm -rf /var/lib/apt/lists/*
 EOF
 
