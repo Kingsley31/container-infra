@@ -51,7 +51,7 @@ Listen 8080
 EOF
 
 # Roundcube version
-ROUNDCUBE_VERSION="1.6.11"
+ROUNDCUBE_VERSION="1.6.11-fpm"
 CUSTOM_IMAGE="roundcube/roundcubemail:${ROUNDCUBE_VERSION}"
 
 # Stop and remove existing container if it exists
