@@ -47,14 +47,29 @@ Listen 8080
 </IfModule>
 EOF
 
-# Set Roundcube version (change if needed, e.g. 1.6.11)
+# Roundcube version
 ROUNDCUBE_VERSION="latest"
+CUSTOM_IMAGE="my-roundcube:${ROUNDCUBE_VERSION}"
 
 # Stop and remove existing container if it exists
 if nerdctl ps -a --format '{{.Names}}' | grep -q '^roundcube$'; then
   echo "Removing existing roundcube container..."
   nerdctl rm -f roundcube
 fi
+
+# Build custom Roundcube image with php-imap enabled
+TMP_DIR="$(mktemp -d)"
+cat > "${TMP_DIR}/Dockerfile" <<EOF
+FROM roundcube/roundcubemail:${ROUNDCUBE_VERSION}
+RUN apt-get update && \
+    apt-get install -y php8.2-imap && \
+    docker-php-ext-enable imap && \
+    rm -rf /var/lib/apt/lists/*
+EOF
+
+echo "Building custom Roundcube image: ${CUSTOM_IMAGE}"
+nerdctl build -t "${CUSTOM_IMAGE}" "${TMP_DIR}"
+rm -rf "${TMP_DIR}"
 
 # Run Roundcube container with Apache override
 nerdctl run -d \
@@ -66,4 +81,4 @@ nerdctl run -d \
   -v "$VOLUME_BASE/var/roundcube/config:/var/roundcube/config" \
   -v "$VOLUME_BASE/tmp/roundcube-temp:/tmp/roundcube-temp" \
   -v "$VOLUME_BASE/apache/ports.conf:/etc/apache2/ports.conf:ro" \
-  ghcr.io/bitnami/roundcube:"$ROUNDCUBE_VERSION"
+  "${CUSTOM_IMAGE}"
